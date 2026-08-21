@@ -16,10 +16,8 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 # -------------------------------------------------------------
 # CẤU HÌNH QUYỀN VÀ CHỦ BOT (OWNER)
 # -------------------------------------------------------------
-# Nhập User ID của BẠN (Chủ Bot) vào đây để có toàn quyền thêm/xóa admin:
-OWNER_ID = 1530913781515812925  # <--- THAY ID DISCORD CỦA BẠN VÀO ĐÂY (ví dụ: 123456789012345678)
+OWNER_ID = 0  # <--- THAY ID DISCORD CỦA BẠN VÀO ĐÂY
 
-# Danh sách ID được phép sử dụng bot (ADMIN):
 ADMIN_IDS = []
 
 # ==================== 1. WEB SERVER GIẢ LẬP ĐỂ RENDER GIỮ BOT 24/7 ====================
@@ -49,7 +47,7 @@ class SMMBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
-        intents.members = True  # Bật intent lấy thông tin member
+        intents.members = True
         super().__init__(command_prefix="/", intents=intents)
 
     async def setup_hook(self):
@@ -67,15 +65,14 @@ def smm_api_request(data):
         return {"error": str(e)}
 
 def is_authorized(user_id: int) -> bool:
-    # Nếu không cài danh sách admin & chưa cài OWNER_ID thì cho phép tất cả
     if not ADMIN_IDS and OWNER_ID == 0:
         return True
     return user_id == OWNER_ID or user_id in ADMIN_IDS
 
 def is_owner(user_id: int) -> bool:
-    if OWNER_ID == 0:  # Nếu chưa cài OWNER_ID thì tạm thời ai cũng có thể dùng lệnh owner
+    if OWNER_ID == 0:
         return True
-    return user_id == OWNER_ID
+    return user_id == 1530913781515812925
 
 @bot.event
 async def on_ready():
@@ -144,7 +141,6 @@ async def list_authorized_users(interaction: discord.Interaction):
 
     msg = "📋 **DANH SÁCH NGƯỜI DÙNG ĐƯỢC PHÉP SỬ DỤNG BOT**\n\n"
     
-    # Hiển thị Owner
     if OWNER_ID != 0:
         try:
             owner_user = await bot.fetch_user(OWNER_ID)
@@ -152,9 +148,8 @@ async def list_authorized_users(interaction: discord.Interaction):
         except Exception:
             msg += f"👑 **Chủ Bot (Owner):** ID `{OWNER_ID}`\n\n"
     
-    # Hiển thị danh sách Admin/User được cấp quyền
     if not ADMIN_IDS:
-        msg += "🔓 **Chế độ:** Chưa có Admin nào được thêm (Hoặc đang công khai nếu chưa cài Owner ID)."
+        msg += "🔓 **Chế độ:** Chưa có Admin nào được thêm."
     else:
         msg += "👥 **Danh sách Admin/Người dùng được cấp quyền:**\n"
         for idx, uid in enumerate(ADMIN_IDS, start=1):
@@ -217,8 +212,8 @@ async def check_balance(interaction: discord.Interaction):
     result = smm_api_request({'action': 'balance'})
     
     if 'balance' in result:
-        raw_balance = float(result['balance'])
-        formatted_balance = f"{raw_balance:,.3f}".rstrip('0').rstrip('.').replace(",", "X").replace(".", ",").replace("X", ".")
+        raw_balance = int(float(result['balance']))
+        formatted_balance = f"{raw_balance:,}".replace(",", ".")
         await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance} nghìn đồng**")
     else:
         await interaction.followup.send("❌ Không thể tra cứu số dư.")
