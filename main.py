@@ -97,7 +97,7 @@ async def on_ready():
 async def get_my_id(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"🆔 **ID Discord của bạn là:** `{interaction.user.id}`", 
-        ephemeral=True
+        ephemeral=False
     )
 
 @bot.tree.command(name="checkquyen", description="Kiểm tra bản thân có quyền dùng Bot hay không")
@@ -105,17 +105,17 @@ async def check_my_permission(interaction: discord.Interaction):
     if is_owner(interaction.user.id):
         await interaction.response.send_message(
             f"👑 **{interaction.user.name}**, bạn là **CHỦ BOT (OWNER)**!", 
-            ephemeral=True
+            ephemeral=False
         )
     elif is_authorized(interaction.user.id):
         await interaction.response.send_message(
             f"✅ **{interaction.user.name}**, bạn **ĐƯỢC PHÉP** sử dụng Bot!", 
-            ephemeral=True
+            ephemeral=False
         )
     else:
         await interaction.response.send_message(
             f"❌ **{interaction.user.name}**, bạn **KHÔNG CÓ QUYỀN** sử dụng Bot!", 
-            ephemeral=True
+            ephemeral=False
         )
 
 @bot.tree.command(name="list", description="Hiển thị danh sách tất cả các lệnh của Bot")
@@ -141,17 +141,17 @@ async def list_commands(interaction: discord.Interaction):
         "• `/ttlike` : Tăng Like TikTok (#7236)\n"
         "• `/ttview` : Tăng View TikTok (#7240 - Tối thiểu 1000)"
     )
-    await interaction.response.send_message(help_text, ephemeral=True)
+    await interaction.response.send_message(help_text, ephemeral=False)
 
 # ==================== 4. LỆNH QUẢN LÝ QUYỀN ====================
 
 @bot.tree.command(name="danhsachquyen", description="Xem danh sách chi tiết người dùng được phép sử dụng Bot")
 async def list_authorized_users(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     msg = "📋 **DANH SÁCH NGƯỜI DÙNG ĐƯỢC PHÉP SỬ DỤNG BOT**\n\n"
     
     if OWNER_ID != 0:
@@ -178,13 +178,13 @@ async def list_authorized_users(interaction: discord.Interaction):
 @app_commands.describe(user_id="Nhập Discord User ID cần cấp quyền")
 async def add_permission(interaction: discord.Interaction, user_id: str):
     if not is_owner(interaction.user.id):
-        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền thêm người dùng!", ephemeral=True)
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền thêm người dùng!", ephemeral=False)
         return
 
     try:
         uid = int(user_id)
         if uid in ADMIN_IDS:
-            await interaction.response.send_message(f"⚠️ User ID `{uid}` đã có trong danh sách từ trước!", ephemeral=True)
+            await interaction.response.send_message(f"⚠️ User ID `{uid}` đã có trong danh sách từ trước!", ephemeral=False)
         else:
             ADMIN_IDS.append(uid)
             try:
@@ -192,26 +192,26 @@ async def add_permission(interaction: discord.Interaction, user_id: str):
                 info = f"**{user.name}** (`{uid}`)"
             except Exception:
                 info = f"`{uid}`"
-            await interaction.response.send_message(f"✅ Đã cấp quyền sử dụng Bot thành công cho: {info}", ephemeral=True)
+            await interaction.response.send_message(f"✅ Đã cấp quyền sử dụng Bot thành công cho: {info}", ephemeral=False)
     except ValueError:
-        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
+        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=False)
 
 @bot.tree.command(name="goquyen", description="[Chủ bot] Gỡ quyền dùng Bot của một Discord User ID")
 @app_commands.describe(user_id="Nhập Discord User ID cần gỡ quyền")
 async def remove_permission(interaction: discord.Interaction, user_id: str):
     if not is_owner(interaction.user.id):
-        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền gỡ người dùng!", ephemeral=True)
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền gỡ người dùng!", ephemeral=False)
         return
 
     try:
         uid = int(user_id)
         if uid in ADMIN_IDS:
             ADMIN_IDS.remove(uid)
-            await interaction.response.send_message(f"🗑️ Đã gỡ quyền sử dụng Bot của User ID: `{uid}`", ephemeral=True)
+            await interaction.response.send_message(f"🗑️ Đã gỡ quyền sử dụng Bot của User ID: `{uid}`", ephemeral=False)
         else:
-            await interaction.response.send_message(f"⚠️ User ID `{uid}` không có trong danh sách được cấp quyền!", ephemeral=True)
+            await interaction.response.send_message(f"⚠️ User ID `{uid}` không có trong danh sách được cấp quyền!", ephemeral=False)
     except ValueError:
-        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
+        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=False)
 
 # ==================== 5. BỘ GIAO DIỆN DROPDOWN CHO LỆNH /CHECK ====================
 
@@ -240,11 +240,11 @@ class CategorySelect(discord.ui.Select):
             
         if len(msg) > 2000:
             chunks = [msg[i:i+1900] for i in range(0, len(msg), 1900)]
-            await interaction.response.send_message(chunks[0], ephemeral=True)
+            await interaction.response.send_message(chunks[0], ephemeral=False)
             for chunk in chunks[1:]:
-                await interaction.followup.send(chunk, ephemeral=True)
+                await interaction.followup.send(chunk, ephemeral=False)
         else:
-            await interaction.response.send_message(msg, ephemeral=True)
+            await interaction.response.send_message(msg, ephemeral=False)
 
 class CategorySelectView(discord.ui.View):
     def __init__(self, categories, raw_services):
@@ -271,14 +271,14 @@ class PlatformSelect(discord.ui.Select):
                     categories.append(cat)
                     
         if not categories:
-            await interaction.response.send_message(f"❌ Không tìm thấy danh mục nào cho **{self.values[0]}**.", ephemeral=True)
+            await interaction.response.send_message(f"❌ Không tìm thấy danh mục nào cho **{self.values[0]}**.", ephemeral=False)
             return
 
         view = CategorySelectView(categories, self.all_services)
         await interaction.response.send_message(
             f"✅ Đã chọn nền tảng **{self.values[0]}**!\nVui lòng chọn **Danh mục** bên dưới để xem chi tiết mã dịch vụ:", 
             view=view, 
-            ephemeral=True
+            ephemeral=False
         )
 
 class PlatformSelectView(discord.ui.View):
@@ -300,7 +300,7 @@ class ConfirmOrderView(discord.ui.View):
     @discord.ui.button(label="🟢 Xác nhận đặt", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=True)
+            await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=False)
             return
 
         await interaction.response.defer()
@@ -315,6 +315,7 @@ class ConfirmOrderView(discord.ui.View):
         if 'order' in result:
             await interaction.followup.send(
                 f"✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n"
+                f"• Người đặt: <@{self.user_id}>\n"
                 f"• Mã Đơn Hàng: `{result['order']}`\n"
                 f"• Mã Dịch Vụ: `{self.service_id}`\n"
                 f"• Số lượng: `{self.quantity:,}`\n"
@@ -328,10 +329,10 @@ class ConfirmOrderView(discord.ui.View):
     @discord.ui.button(label="🔴 Hủy bỏ", style=discord.ButtonStyle.red)
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=True)
+            await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=False)
             return
 
-        await interaction.response.send_message("❌ Đã hủy bỏ đơn hàng.", ephemeral=True)
+        await interaction.response.send_message("❌ Đã hủy bỏ đơn hàng.", ephemeral=False)
         self.stop()
 
 async def process_order_with_confirmation(interaction: discord.Interaction, service_id: str, link: str, quantity: int):
@@ -343,12 +344,12 @@ async def process_order_with_confirmation(interaction: discord.Interaction, serv
     rate_val = float(service_info.get('rate', 0)) if service_info else 0
     service_name = service_info.get('name', f'Dịch vụ ID #{service_id}') if service_info else f'Dịch vụ ID #{service_id}'
     
-    # Tính tổng tiền = (Rate / 1000) * Quantity
     total_price = (rate_val / 1000.0) * quantity
 
     confirm_msg = (
         f"⚠️ **BẠN CÓ CHẮC CHẮN MUỐN ĐẶT ĐƠN KHÔNG?**\n\n"
         f"📌 **Thông tin đơn hàng:**\n"
+        f"• **Người đặt:** <@{interaction.user.id}>\n"
         f"• **Dịch vụ:** {service_name} (`#{service_id}`)\n"
         f"• **Link/Đường dẫn:** {link}\n"
         f"• **Số lượng:** `{quantity:,}`\n"
@@ -372,10 +373,10 @@ async def process_order_with_confirmation(interaction: discord.Interaction, serv
 @bot.tree.command(name="check", description="Menu tra cứu dịch vụ Facebook & TikTok")
 async def check_services(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=False)
     fetch_services_cache()
 
     if isinstance(SERVICES_CACHE, list) and len(SERVICES_CACHE) > 0:
@@ -387,7 +388,7 @@ async def check_services(interaction: discord.Interaction):
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
 
     await interaction.response.defer()
@@ -404,11 +405,11 @@ async def check_balance(interaction: discord.Interaction):
 @app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn bài viết/kênh", so_luong="Số lượng cần tăng (tối thiểu 50)")
 async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: str, so_luong: int):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
 
     if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
         return
 
     await interaction.response.defer()
@@ -418,7 +419,7 @@ async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: s
 @app_commands.describe(order_id="Mã đơn hàng cần kiểm tra")
 async def check_status(interaction: discord.Interaction, order_id: str):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
 
     await interaction.response.defer()
@@ -434,10 +435,10 @@ async def check_status(interaction: discord.Interaction, order_id: str):
 @app_commands.describe(link="Đường dẫn bài viết Facebook", so_luong="Số lượng cần tăng (tối thiểu 50)")
 async def fb_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
     if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
         return
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7376", link, so_luong)
@@ -446,10 +447,10 @@ async def fb_like(interaction: discord.Interaction, link: str, so_luong: int = 5
 @app_commands.describe(link="Đường dẫn trang/trang cá nhân FB", so_luong="Số lượng cần tăng (tối thiểu 50)")
 async def fb_follow(interaction: discord.Interaction, link: str, so_luong: int = 50):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
     if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
         return
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7132", link, so_luong)
@@ -458,10 +459,10 @@ async def fb_follow(interaction: discord.Interaction, link: str, so_luong: int =
 @app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 50)")
 async def tt_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
     if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
         return
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7236", link, so_luong)
@@ -470,10 +471,10 @@ async def tt_like(interaction: discord.Interaction, link: str, so_luong: int = 5
 @app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 1000)")
 async def tt_view(interaction: discord.Interaction, link: str, so_luong: int = 1000):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
     if so_luong < 1000:
-        await interaction.response.send_message("⚠️ Số lượng view TikTok đặt tối thiểu là **1000**!", ephemeral=True)
+        await interaction.response.send_message("⚠️ Số lượng view TikTok đặt tối thiểu là **1000**!", ephemeral=False)
         return
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7240", link, so_luong)
