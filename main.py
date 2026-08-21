@@ -16,7 +16,7 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 # -------------------------------------------------------------
 # CẤU HÌNH QUYỀN VÀ CHỦ BOT (OWNER)
 # -------------------------------------------------------------
-OWNER_ID = 0  # <--- THAY ID DISCORD CỦA BẠN VÀO ĐÂY
+OWNER_ID = 1530913781515812925  # <--- THAY ID DISCORD CỦA BẠN VÀO ĐÂY
 
 ADMIN_IDS = []
 
@@ -72,13 +72,13 @@ def is_authorized(user_id: int) -> bool:
 def is_owner(user_id: int) -> bool:
     if OWNER_ID == 0:
         return True
-    return user_id == 1530913781515812925
+    return user_id == OWNER_ID
 
 @bot.event
 async def on_ready():
     print(f'Bot đã kết nối thành công: {bot.user}')
 
-# ==================== 3. LỆNH CÔNG KHAI (AI CŨNG DÙNG ĐƯỢC) ====================
+# ==================== 3. LỆNH CÔNG KHAI ====================
 
 @bot.tree.command(name="id", description="Xem Discord User ID của bạn")
 async def get_my_id(interaction: discord.Interaction):
@@ -118,6 +118,7 @@ async def list_commands(interaction: discord.Interaction):
         "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
         "• `/goquyen` : Gỡ quyền dùng bot của User ID\n\n"
         "💰 **Lệnh Dịch vụ:**\n"
+        "• `/check` : Xem TẤT CẢ mục & mã dịch vụ Facebook + TikTok\n"
         "• `/sodu` : Kiểm tra số dư tài khoản web\n"
         "• `/don` : Tra cứu trạng thái đơn hàng\n"
         "• `/dat` : Đặt đơn tùy chỉnh (`id_dich_vu`, `link`, `so_luong`)\n\n"
@@ -129,7 +130,7 @@ async def list_commands(interaction: discord.Interaction):
     )
     await interaction.response.send_message(help_text, ephemeral=True)
 
-# ==================== 4. LỆNH QUẢN LÝ QUYỀN (CHỈ CHỦ BOT DÙNG ĐƯỢC) ====================
+# ==================== 4. LỆNH QUẢN LÝ QUYỀN ====================
 
 @bot.tree.command(name="danhsachquyen", description="Xem danh sách chi tiết người dùng được phép sử dụng Bot")
 async def list_authorized_users(interaction: discord.Interaction):
@@ -138,7 +139,6 @@ async def list_authorized_users(interaction: discord.Interaction):
         return
 
     await interaction.response.defer(ephemeral=True)
-
     msg = "📋 **DANH SÁCH NGƯỜI DÙNG ĐƯỢC PHÉP SỬ DỤNG BOT**\n\n"
     
     if OWNER_ID != 0:
@@ -200,7 +200,105 @@ async def remove_permission(interaction: discord.Interaction, user_id: str):
     except ValueError:
         await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
 
-# ==================== 5. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
+# ==================== 5. CLASS PHÂN TRANG CHO LỆNH /CHECK ====================
+
+class ServicePaginator(discord.ui.View):
+    def __init__(self, pages):
+        super().__init__(timeout=180)
+        self.pages = pages
+        self.current_page = 0
+
+    @discord.ui.button(label="◀️ Trang trước", style=discord.ButtonStyle.primary)
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page > 0:
+            self.current_page -= 1
+            await interaction.response.edit_message(content=self.pages[self.current_page], view=self)
+        else:
+            await interaction.response.defer()
+
+    @discord.ui.button(label="Trang sau ▶️", style=discord.ButtonStyle.primary)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.current_page < len(self.pages) - 1:
+            self.current_page += 1
+            await interaction.response.edit_message(content=self.pages[self.current_page], view=self)
+        else:
+            await interaction.response.defer()
+
+# ==================== 6. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
+
+@bot.tree.command(name="check", description="Xem TẤT CẢ các mục và mã dịch vụ Facebook + TikTok")
+async def check_services(interaction: discord.Interaction):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+
+    await interaction.response.defer()
+    
+    services = smm_api_request({'action': 'services'})
+
+    if isinstance(services, list) and len(services) > 0:
+        formatted_list = []
+        
+        for s in services:
+            cat = str(s.get('category', '')).lower()
+            name = str(s.get('name', '')).lower()
+            
+            # Lọc lấy TẤT CẢ dịch vụ liên quan đến Facebook hoặc TikTok
+            if 'facebook' in cat or 'fb' in cat or 'tiktok' in cat or 'tt' in cat or \
+               'facebook' in name or 'fb' in name or 'tiktok' in name or 'tt' in name:
+                
+                cat_name = s.get('category', 'Khác').upper()
+                s_id = s.get('service', 'N/A')
+                s_name = s.get('name', 'N/A')
+                min_q = s.get('min', '1')
+                max_q = s.get('max', '1000000')
+                rate = s.get('rate', '0')
+                
+                formatted_list.append({
+                    'category': cat_name,
+                    'text': f"🔹 **Mã ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{rate}` | Min: `{min_q}` - Max: `{max_q}`\n"
+                })
+
+        if not formatted_list:
+            await interaction.followup.send("❌ Không tìm thấy dịch vụ Facebook hay TikTok nào trên hệ thống.")
+            return
+
+        # Gom nhóm dịch vụ theo danh mục
+        pages = []
+        current_chunk = "📋 **TẤT CẢ MỤC & MÃ DỊCH VỤ FACEBOOK / TIKTOK**\n\n"
+        current_cat = ""
+
+        for item in formatted_list:
+            item_text = ""
+            if item['category'] != current_cat:
+                current_cat = item['category']
+                item_text += f"\n📂 **{current_cat}**\n"
+            
+            item_text += item['text']
+
+            # Giới hạn mỗi trang khoảng 1800 ký tự để không bị lỗi Discord
+            if len(current_chunk) + len(item_text) > 1800:
+                pages.append(current_chunk)
+                current_chunk = "📋 **TẤT CẢ MỤC & MÃ DỊCH VỤ FACEBOOK / TIKTOK (Tiếp theo)**\n\n" + item_text
+            else:
+                current_chunk += item_text
+
+        if current_chunk:
+            pages.append(current_chunk)
+
+        # Thêm thông tin số trang vào tiêu đề từng trang
+        total_pages = len(pages)
+        for i in range(total_pages):
+            pages[i] = f"📄 **[Trang {i+1}/{total_pages}]**\n" + pages[i]
+
+        if total_pages == 1:
+            await interaction.followup.send(pages[0])
+        else:
+            view = ServicePaginator(pages)
+            await interaction.followup.send(pages[0], view=view)
+
+    else:
+        await interaction.followup.send("❌ Không thể tra cứu danh sách dịch vụ lúc này.")
 
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
@@ -262,7 +360,7 @@ async def check_status(interaction: discord.Interaction, order_id: str):
     else:
         await interaction.followup.send("❌ Không tìm thấy thông tin đơn hàng này.")
 
-# ==================== 6. LỆNH ĐẶT NHANH ====================
+# ==================== 7. LỆNH ĐẶT NHANH ====================
 
 @bot.tree.command(name="fblike", description="Tăng Like Facebook nhanh (#7376 - Tối thiểu 50)")
 @app_commands.describe(link="Đường dẫn bài viết Facebook", so_luong="Số lượng cần tăng (tối thiểu 50)")
