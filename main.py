@@ -13,26 +13,39 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 API_KEY = os.getenv('API_KEY')
 API_URL = "https://dichvu.c25tool.net/api/v2"
 
-# Danh sách Discord User ID có quyền dùng bot
+# -------------------------------------------------------------
+# DANH SÁCH USER ID ĐƯỢC PHÉP DÙNG BOT (ADMIN)
+# Điền Discord User ID vào đây. Ví dụ: ADMIN_IDS = [123456789012345678]
+# Nếu để trống [], tất cả mọi người đều có thể dùng lệnh admin.
+# -------------------------------------------------------------
 ADMIN_IDS = []
 
-# --- TẠO WEB SERVER GIẢ LẬP ĐỂ RENDER KHÔNG BÁO LỖI PORT ---
+# ==================== 1. WEB SERVER GIẢ LẬP ĐỂ RENDER GIỮ BOT 24/7 ====================
+
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot Discord đang hoạt động 24/7!")
+        # Đã mã hóa UTF-8 chuẩn để tránh lỗi SyntaxError bytes
+        response_text = "Bot Discord đang hoạt động 24/7!"
+        self.wfile.write(response_text.encode('utf-8'))
+
+    # Tắt bớt log HTTP để làm sạch bảng điều khiển Render
+    def log_message(self, format, *args):
+        return
 
 def run_http_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
-    print(f"Đã mở Web Server giả lập trên port {port}")
+    print(f"Đã mở Web Server giả lập thành công trên port {port}")
     server.serve_forever()
 
-# Chạy Web Server ở một luồng (thread) riêng
+# Chạy Web Server trên luồng phụ
 threading.Thread(target=run_http_server, daemon=True).start()
 
-# --- KHỞI TẠO DISCORD BOT ---
+# ==================== 2. KHỞI TẠO DISCORD BOT ====================
+
 class SMMBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -60,9 +73,9 @@ def is_authorized(user_id: int) -> bool:
 
 @bot.event
 async def on_ready():
-    print(f'Bot đã kết nối: {bot.user}')
+    print(f'Bot đã kết nối thành công: {bot.user}')
 
-# ==================== LỆNH CÔNG KHAI ====================
+# ==================== 3. LỆNH CÔNG KHAI (AI CŨNG DÙNG ĐƯỢC) ====================
 
 @bot.tree.command(name="id", description="Xem Discord User ID của bạn")
 async def get_my_id(interaction: discord.Interaction):
@@ -71,7 +84,7 @@ async def get_my_id(interaction: discord.Interaction):
         ephemeral=True
     )
 
-# ==================== LỆNH ADMIN ====================
+# ==================== 4. LỆNH CẦN CẤP QUYỀN (ADMIN ONLY) ====================
 
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web (VNĐ)")
 async def check_balance(interaction: discord.Interaction):
@@ -83,6 +96,7 @@ async def check_balance(interaction: discord.Interaction):
     result = smm_api_request({'action': 'balance'})
     
     if 'balance' in result:
+        # Tự động quy đổi từ nghìn đồng sang VNĐ chuẩn
         raw_balance = float(result['balance'])
         real_balance = int(raw_balance * 1000)
         formatted_balance = "{:,}".format(real_balance).replace(",", ".")
@@ -121,7 +135,7 @@ async def list_services(interaction: discord.Interaction, nen_tang: app_commands
     await interaction.followup.send(msg)
 
 @bot.tree.command(name="dat", description="Đặt đơn cho bất kỳ dịch vụ phụ nào")
-@app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn", so_luong="Số lượng")
+@app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn bài viết/kênh", so_luong="Số lượng cần tăng")
 async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: str, so_luong: int):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
