@@ -16,9 +16,9 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 # -------------------------------------------------------------
 # CẤU HÌNH QUYỀN VÀ CHỦ BOT (OWNER)
 # -------------------------------------------------------------
-OWNER_ID = 1530913781515812925  # <--- THAY ID DISCORD CỦA BẠN VÀO ĐÂY
+OWNER_ID = 1530913781515812925  # ID Chủ bot
 
-ADMIN_IDS = []
+ADMIN_IDS = [1530913781515812925]  # Danh sách Admin mặc định
 
 # ==================== 1. WEB SERVER GIẢ LẬP ĐỂ RENDER GIỮ BOT 24/7 ====================
 
@@ -118,7 +118,7 @@ async def list_commands(interaction: discord.Interaction):
         "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
         "• `/goquyen` : Gỡ quyền dùng bot của User ID\n\n"
         "💰 **Lệnh Dịch vụ:**\n"
-        "• `/check` : Xem TẤT CẢ mục & mã dịch vụ Facebook + TikTok\n"
+        "• `/check` : Menu chọn dịch vụ Facebook / TikTok đa cấp độ\n"
         "• `/sodu` : Kiểm tra số dư tài khoản web\n"
         "• `/don` : Tra cứu trạng thái đơn hàng\n"
         "• `/dat` : Đặt đơn tùy chỉnh (`id_dich_vu`, `link`, `so_luong`)\n\n"
@@ -200,103 +200,99 @@ async def remove_permission(interaction: discord.Interaction, user_id: str):
     except ValueError:
         await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
 
-# ==================== 5. CLASS PHÂN TRANG CHO LỆNH /CHECK ====================
+# ==================== 5. BỘ GIAO DIỆN DROPDOWN CHO LỆNH /CHECK ====================
 
-class ServicePaginator(discord.ui.View):
-    def __init__(self, pages):
-        super().__init__(timeout=180)
-        self.pages = pages
-        self.current_page = 0
+# Menu cấp 3: Chọn danh mục cụ thể -> Hiện các dịch vụ tương ứng
+class CategorySelect(discord.ui.Select):
+    def __init__(self, categories, raw_services):
+        options = [
+            discord.SelectOption(label=cat[:100], description=f"Xem các dịch vụ của {cat}"[:100])
+            for cat in categories[:25]
+        ]
+        super().__init__(placeholder="📂 Chọn danh mục muốn xem dịch vụ...", options=options)
+        self.raw_services = raw_services
 
-    @discord.ui.button(label="◀️ Trang trước", style=discord.ButtonStyle.primary)
-    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current_page > 0:
-            self.current_page -= 1
-            await interaction.response.edit_message(content=self.pages[self.current_page], view=self)
+    async def callback(self, interaction: discord.Interaction):
+        selected_cat = self.values[0]
+        
+        # Lọc ra tất cả các dịch vụ thuộc danh mục được chọn
+        matching_services = [s for s in self.raw_services if s.get('category') == selected_cat]
+        
+        msg = f"📌 **DANH SÁCH DỊCH VỤ THUỘC:** `{selected_cat.upper()}`\n\n"
+        for s in matching_services:
+            s_id = s.get('service', 'N/A')
+            s_name = s.get('name', 'N/A')
+            rate = s.get('rate', '0')
+            min_q = s.get('min', '1')
+            max_q = s.get('max', '1000000')
+            msg += f"🔹 **ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{rate}` | Min: `{min_q}` - Max: `{max_q}`\n"
+            
+        if len(msg) > 2000:
+            chunks = [msg[i:i+1900] for i in range(0, len(msg), 1900)]
+            await interaction.response.send_message(chunks[0], ephemeral=True)
+            for chunk in chunks[1:]:
+                await interaction.followup.send(chunk, ephemeral=True)
         else:
-            await interaction.response.defer()
+            await interaction.response.send_message(msg, ephemeral=True)
 
-    @discord.ui.button(label="Trang sau ▶️", style=discord.ButtonStyle.primary)
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.current_page < len(self.pages) - 1:
-            self.current_page += 1
-            await interaction.response.edit_message(content=self.pages[self.current_page], view=self)
-        else:
-            await interaction.response.defer()
+class CategorySelectView(discord.ui.View):
+    def __init__(self, categories, raw_services):
+        super().__init__(timeout=120)
+        self.add_item(CategorySelect(categories, raw_services))
+
+# Menu cấp 1 & 2: Chọn nền tảng Facebook / TikTok
+class PlatformSelect(discord.ui.Select):
+    def __init__(self, all_services):
+        options = [
+            discord.SelectOption(label="Facebook", description="Xem các danh mục & dịch vụ Facebook", emoji="🔵"),
+            discord.SelectOption(label="TikTok", description="Xem các danh mục & dịch vụ TikTok", emoji="🎵")
+        ]
+        super().__init__(placeholder="🌐 Chọn nền tảng bạn muốn kiểm tra...", options=options)
+        self.all_services = all_services
+
+    async def callback(self, interaction: discord.Interaction):
+        platform = self.values[0].lower()
+        
+        # Lọc lấy danh mục thuộc nền tảng đã chọn theo đúng thứ tự từ API (như trên web)
+        categories = []
+        for s in self.all_services:
+            cat = s.get('category', '')
+            cat_lower = cat.lower()
+            
+            if platform in cat_lower or (platform == 'facebook' and 'fb' in cat_lower) or (platform == 'tiktok' and 'tt' in cat_lower):
+                if cat not in categories:
+                    categories.append(cat)
+                    
+        if not categories:
+            await interaction.response.send_message(f"❌ Không tìm thấy danh mục nào cho **{self.values[0]}**.", ephemeral=True)
+            return
+
+        view = CategorySelectView(categories, self.all_services)
+        await interaction.response.send_message(
+            f"✅ Đã chọn nền tảng **{self.values[0]}**!\nVui lòng chọn **Danh mục** bên dưới để xem chi tiết mã dịch vụ:", 
+            view=view, 
+            ephemeral=True
+        )
+
+class PlatformSelectView(discord.ui.View):
+    def __init__(self, all_services):
+        super().__init__(timeout=120)
+        self.add_item(PlatformSelect(all_services))
 
 # ==================== 6. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
 
-@bot.tree.command(name="check", description="Xem TẤT CẢ các mục và mã dịch vụ Facebook + TikTok")
+@bot.tree.command(name="check", description="Menu tra cứu dịch vụ Facebook & TikTok")
 async def check_services(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
         return
 
-    await interaction.response.defer()
-    
+    await interaction.response.defer(ephemeral=True)
     services = smm_api_request({'action': 'services'})
 
     if isinstance(services, list) and len(services) > 0:
-        formatted_list = []
-        
-        for s in services:
-            cat = str(s.get('category', '')).lower()
-            name = str(s.get('name', '')).lower()
-            
-            # Lọc lấy TẤT CẢ dịch vụ liên quan đến Facebook hoặc TikTok
-            if 'facebook' in cat or 'fb' in cat or 'tiktok' in cat or 'tt' in cat or \
-               'facebook' in name or 'fb' in name or 'tiktok' in name or 'tt' in name:
-                
-                cat_name = s.get('category', 'Khác').upper()
-                s_id = s.get('service', 'N/A')
-                s_name = s.get('name', 'N/A')
-                min_q = s.get('min', '1')
-                max_q = s.get('max', '1000000')
-                rate = s.get('rate', '0')
-                
-                formatted_list.append({
-                    'category': cat_name,
-                    'text': f"🔹 **Mã ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{rate}` | Min: `{min_q}` - Max: `{max_q}`\n"
-                })
-
-        if not formatted_list:
-            await interaction.followup.send("❌ Không tìm thấy dịch vụ Facebook hay TikTok nào trên hệ thống.")
-            return
-
-        # Gom nhóm dịch vụ theo danh mục
-        pages = []
-        current_chunk = "📋 **TẤT CẢ MỤC & MÃ DỊCH VỤ FACEBOOK / TIKTOK**\n\n"
-        current_cat = ""
-
-        for item in formatted_list:
-            item_text = ""
-            if item['category'] != current_cat:
-                current_cat = item['category']
-                item_text += f"\n📂 **{current_cat}**\n"
-            
-            item_text += item['text']
-
-            # Giới hạn mỗi trang khoảng 1800 ký tự để không bị lỗi Discord
-            if len(current_chunk) + len(item_text) > 1800:
-                pages.append(current_chunk)
-                current_chunk = "📋 **TẤT CẢ MỤC & MÃ DỊCH VỤ FACEBOOK / TIKTOK (Tiếp theo)**\n\n" + item_text
-            else:
-                current_chunk += item_text
-
-        if current_chunk:
-            pages.append(current_chunk)
-
-        # Thêm thông tin số trang vào tiêu đề từng trang
-        total_pages = len(pages)
-        for i in range(total_pages):
-            pages[i] = f"📄 **[Trang {i+1}/{total_pages}]**\n" + pages[i]
-
-        if total_pages == 1:
-            await interaction.followup.send(pages[0])
-        else:
-            view = ServicePaginator(pages)
-            await interaction.followup.send(pages[0], view=view)
-
+        view = PlatformSelectView(services)
+        await interaction.followup.send("🔍 **MENU TRA CÚU DỊCH VỤ SMM**\nVui lòng chọn nền tảng bạn cần kiểm tra:", view=view)
     else:
         await interaction.followup.send("❌ Không thể tra cứu danh sách dịch vụ lúc này.")
 
