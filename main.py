@@ -16,7 +16,7 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 # -------------------------------------------------------------
 # DANH SÁCH USER ID ĐƯỢC PHÉP DÙNG BOT (ADMIN)
 # Điền Discord User ID vào đây. Ví dụ: ADMIN_IDS = [123456789012345678]
-# Nếu để trống [], tất cả mọi người đều có thể dùng lệnh admin.
+# Nếu danh sách trống [], TẤT CẢ mọi người đều có quyền dùng.
 # -------------------------------------------------------------
 ADMIN_IDS = []
 
@@ -81,9 +81,96 @@ async def get_my_id(interaction: discord.Interaction):
         ephemeral=True
     )
 
-# ==================== 4. LỆNH CẦN CẤP QUYỀN (ADMIN ONLY) ====================
+@bot.tree.command(name="checkquyen", description="Kiểm tra bản thân có quyền dùng Bot hay không")
+async def check_my_permission(interaction: discord.Interaction):
+    if is_authorized(interaction.user.id):
+        await interaction.response.send_message(
+            f"✅ **{interaction.user.name}**, bạn **ĐƯỢC PHÉP** sử dụng Bot!", 
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"❌ **{interaction.user.name}**, bạn **KHÔNG CÓ QUYỀN** sử dụng Bot!", 
+            ephemeral=True
+        )
 
-# Lệnh /sodu - Hiển thị chuẩn theo đơn vị "nghìn đồng" với tối đa 3 số thập phân
+@bot.tree.command(name="list", description="Hiển thị danh sách tất cả các lệnh của Bot")
+async def list_commands(interaction: discord.Interaction):
+    help_text = (
+        "📜 **DANH SÁCH LỆNH CỦA BOT**\n\n"
+        "🟢 **Lệnh công khai:**\n"
+        "• `/id` : Xem Discord User ID của bạn\n"
+        "• `/checkquyen` : Kiểm tra bản thân có quyền dùng bot không\n"
+        "• `/list` : Xem danh sách các lệnh\n\n"
+        "🔑 **Lệnh quản lý quyền:**\n"
+        "• `/danhsachquyen` : Xem danh sách ID có quyền dùng bot\n"
+        "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
+        "• `/goquyen` : Gỡ quyền dùng bot của User ID\n\n"
+        "💰 **Lệnh Dịch vụ:**\n"
+        "• `/sodu` : Kiểm tra số dư tài khoản web\n"
+        "• `/don` : Tra cứu trạng thái đơn hàng\n"
+        "• `/dat` : Đặt đơn tùy chỉnh (`id_dich_vu`, `link`, `so_luong`)\n\n"
+        "⚡ **Lệnh đặt nhanh:**\n"
+        "• `/fblike` : Tăng Like Facebook (#7376)\n"
+        "• `/fbfollow` : Tăng Follow Facebook (#7132)\n"
+        "• `/ttlike` : Tăng Like TikTok (#7236)\n"
+        "• `/ttview` : Tăng View TikTok (#7240)"
+    )
+    await interaction.response.send_message(help_text, ephemeral=True)
+
+# ==================== 4. LỆNH QUẢN LÝ QUYỀN (ADMIN ONLY) ====================
+
+@bot.tree.command(name="danhsachquyen", description="Xem danh sách User ID được phép dùng Bot")
+async def list_authorized_users(interaction: discord.Interaction):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+
+    if not ADMIN_IDS:
+        msg = "🔓 **Chế độ công khai:** Tất cả mọi người đều có thể sử dụng Bot!"
+    else:
+        msg = "📋 **DANH SÁCH USER ID ĐƯỢC PHÉP DÙNG BOT:**\n"
+        for uid in ADMIN_IDS:
+            msg += f"• `<@{uid}>` (ID: `{uid}`)\n"
+            
+    await interaction.response.send_message(msg, ephemeral=True)
+
+@bot.tree.command(name="themquyen", description="Thêm quyền dùng Bot cho một Discord User ID")
+@app_commands.describe(user_id="Nhập Discord User ID cần cấp quyền")
+async def add_permission(interaction: discord.Interaction, user_id: str):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+
+    try:
+        uid = int(user_id)
+        if uid in ADMIN_IDS:
+            await interaction.response.send_message(f"⚠️ User ID `{uid}` đã có quyền từ trước!", ephemeral=True)
+        else:
+            ADMIN_IDS.append(uid)
+            await interaction.response.send_message(f"✅ Đã cấp quyền sử dụng Bot thành công cho User ID: `{uid}`", ephemeral=True)
+    except ValueError:
+        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
+
+@bot.tree.command(name="goquyen", description="Gỡ quyền dùng Bot của một Discord User ID")
+@app_commands.describe(user_id="Nhập Discord User ID cần gỡ quyền")
+async def remove_permission(interaction: discord.Interaction, user_id: str):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+
+    try:
+        uid = int(user_id)
+        if uid in ADMIN_IDS:
+            ADMIN_IDS.remove(uid)
+            await interaction.response.send_message(f"🗑️ Đã gỡ quyền sử dụng Bot của User ID: `{uid}`", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"⚠️ User ID `{uid}` không có trong danh sách được phép!", ephemeral=True)
+    except ValueError:
+        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
+
+# ==================== 5. LỆNH DỊCH VỤ (ADMIN ONLY) ====================
+
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
@@ -95,42 +182,10 @@ async def check_balance(interaction: discord.Interaction):
     
     if 'balance' in result:
         raw_balance = float(result['balance'])
-        # Lấy tối đa 3 số sau dấu phẩy và định dạng dấu phẩy tiếng Việt
         formatted_balance = f"{raw_balance:,.3f}".rstrip('0').rstrip('.').replace(",", "X").replace(".", ",").replace("X", ".")
-        
         await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance} nghìn đồng**")
     else:
         await interaction.followup.send("❌ Không thể tra cứu số dư.")
-
-@bot.tree.command(name="list", description="Xem danh sách dịch vụ theo nền tảng")
-@app_commands.choices(nen_tang=[
-    app_commands.Choice(name="Facebook", value="facebook"),
-    app_commands.Choice(name="TikTok", value="tiktok")
-])
-async def list_services(interaction: discord.Interaction, nen_tang: app_commands.Choice[str]):
-    if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
-        return
-
-    await interaction.response.defer()
-    keyword = nen_tang.value
-    services = smm_api_request({'action': 'services'})
-    
-    if not isinstance(services, list):
-        await interaction.followup.send("❌ Không thể lấy danh sách dịch vụ.")
-        return
-
-    filtered = [s for s in services if keyword in s.get('category', '').lower() or keyword in s.get('name', '').lower()]
-
-    if not filtered:
-        await interaction.followup.send(f"❌ Không tìm thấy dịch vụ cho {nen_tang.name}.")
-        return
-
-    msg = f"📋 **DANH SÁCH DỊCH VỤ {nen_tang.name.upper()} (15 dịch vụ đầu):**\n"
-    for item in filtered[:15]:
-        msg += f"• **ID `{item.get('service')}`**: {item.get('name')} | Giá: **{item.get('rate')} đ**\n"
-    
-    await interaction.followup.send(msg)
 
 @bot.tree.command(name="dat", description="Đặt đơn cho bất kỳ dịch vụ phụ nào")
 @app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn bài viết/kênh", so_luong="Số lượng cần tăng")
