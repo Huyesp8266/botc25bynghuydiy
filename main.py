@@ -17,10 +17,12 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 # CẤU HÌNH QUYỀN VÀ CHỦ BOT (OWNER)
 # -------------------------------------------------------------
 OWNER_ID = 1530913781515812925  # ID Chủ bot
-
 ADMIN_IDS = [1530913781515812925]  # Danh sách Admin mặc định
 
-# ==================== 1. WEB SERVER GIẢ LẬP ĐỂ RENDER GIỮ BOT 24/7 ====================
+# Cache tạm danh sách dịch vụ để lấy tên & tính toán giá
+SERVICES_CACHE = []
+
+# ==================== 1. WEB SERVER GIẢ LẬP ====================
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -64,6 +66,12 @@ def smm_api_request(data):
     except Exception as e:
         return {"error": str(e)}
 
+def fetch_services_cache():
+    global SERVICES_CACHE
+    res = smm_api_request({'action': 'services'})
+    if isinstance(res, list):
+        SERVICES_CACHE = res
+
 def is_authorized(user_id: int) -> bool:
     if not ADMIN_IDS and OWNER_ID == 0:
         return True
@@ -74,9 +82,14 @@ def is_owner(user_id: int) -> bool:
         return True
     return user_id == OWNER_ID
 
+def format_money(amount: float) -> str:
+    """Định dạng tiền tệ VNĐ dạng 100.000đ"""
+    return f"{int(round(amount)):,}".replace(",", ".") + "đ"
+
 @bot.event
 async def on_ready():
     print(f'Bot đã kết nối thành công: {bot.user}')
+    fetch_services_cache()
 
 # ==================== 3. LỆNH CÔNG KHAI ====================
 
@@ -202,7 +215,6 @@ async def remove_permission(interaction: discord.Interaction, user_id: str):
 
 # ==================== 5. BỘ GIAO DIỆN DROPDOWN CHO LỆNH /CHECK ====================
 
-# Menu cấp 3: Chọn danh mục cụ thể -> Hiện các dịch vụ tương ứng
 class CategorySelect(discord.ui.Select):
     def __init__(self, categories, raw_services):
         options = [
@@ -214,18 +226,17 @@ class CategorySelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         selected_cat = self.values[0]
-        
-        # Lọc ra tất cả các dịch vụ thuộc danh mục được chọn
         matching_services = [s for s in self.raw_services if s.get('category') == selected_cat]
         
         msg = f"📌 **DANH SÁCH DỊCH VỤ THUỘC:** `{selected_cat.upper()}`\n\n"
         for s in matching_services:
             s_id = s.get('service', 'N/A')
             s_name = s.get('name', 'N/A')
-            rate = s.get('rate', '0')
+            rate_val = float(s.get('rate', 0))
+            formatted_rate = format_money(rate_val)
             min_q = s.get('min', '1')
             max_q = s.get('max', '1000000')
-            msg += f"🔹 **ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{rate}` | Min: `{min_q}` - Max: `{max_q}`\n"
+            msg += f"🔹 **ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{formatted_rate} / 1k` | Min: `{min_q}` - Max: `{max_q}`\n"
             
         if len(msg) > 2000:
             chunks = [msg[i:i+1900] for i in range(0, len(msg), 1900)]
@@ -240,7 +251,6 @@ class CategorySelectView(discord.ui.View):
         super().__init__(timeout=120)
         self.add_item(CategorySelect(categories, raw_services))
 
-# Menu cấp 1 & 2: Chọn nền tảng Facebook / TikTok
 class PlatformSelect(discord.ui.Select):
     def __init__(self, all_services):
         options = [
@@ -252,13 +262,10 @@ class PlatformSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         platform = self.values[0].lower()
-        
-        # Lọc lấy danh mục thuộc nền tảng đã chọn theo đúng thứ tự từ API (như trên web)
         categories = []
         for s in self.all_services:
             cat = s.get('category', '')
             cat_lower = cat.lower()
-            
             if platform in cat_lower or (platform == 'facebook' and 'fb' in cat_lower) or (platform == 'tiktok' and 'tt' in cat_lower):
                 if cat not in categories:
                     categories.append(cat)
@@ -279,7 +286,88 @@ class PlatformSelectView(discord.ui.View):
         super().__init__(timeout=120)
         self.add_item(PlatformSelect(all_services))
 
-# ==================== 6. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
+# ==================== 6. VIEW XÁC NHẬN ĐẶT ĐƠN ====================
+
+class ConfirmOrderView(discord.ui.View):
+    def __init__(self, user_id, service_id, link, quantity, total_price):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+        self.service_id = service_id
+        self.link = link
+        self.quantity = quantity
+        self.total_price = total_price
+
+    @discord.ui.button(label="🟢 Xác nhận đặt", style=discord.ButtonStyle.green)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        payload = {
+            'action': 'add',
+            'service': str(self.service_id),
+            'link': self.link,
+            'quantity': self.quantity
+        }
+        result = smm_api_request(payload)
+        
+        if 'order' in result:
+            await interaction.followup.send(
+                f"✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n"
+                f"• Mã Đơn Hàng: `{result['order']}`\n"
+                f"• Mã Dịch Vụ: `{self.service_id}`\n"
+                f"• Số lượng: `{self.quantity:,}`\n"
+                f"• Tổng thanh toán: **{format_money(self.total_price)}**"
+            )
+        else:
+            await interaction.followup.send(f"❌ **Lỗi tạo đơn:** {result.get('error', 'Lỗi không xác định.')}")
+        
+        self.stop()
+
+    @discord.ui.button(label="🔴 Hủy bỏ", style=discord.ButtonStyle.red)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=True)
+            return
+
+        await interaction.response.send_message("❌ Đã hủy bỏ đơn hàng.", ephemeral=True)
+        self.stop()
+
+async def process_order_with_confirmation(interaction: discord.Interaction, service_id: str, link: str, quantity: int):
+    if not SERVICES_CACHE:
+        fetch_services_cache()
+
+    service_info = next((s for s in SERVICES_CACHE if str(s.get('service')) == str(service_id)), None)
+    
+    rate_val = float(service_info.get('rate', 0)) if service_info else 0
+    service_name = service_info.get('name', f'Dịch vụ ID #{service_id}') if service_info else f'Dịch vụ ID #{service_id}'
+    
+    # Tính tổng tiền = (Rate / 1000) * Quantity
+    total_price = (rate_val / 1000.0) * quantity
+
+    confirm_msg = (
+        f"⚠️ **BẠN CÓ CHẮC CHẮN MUỐN ĐẶT ĐƠN KHÔNG?**\n\n"
+        f"📌 **Thông tin đơn hàng:**\n"
+        f"• **Dịch vụ:** {service_name} (`#{service_id}`)\n"
+        f"• **Link/Đường dẫn:** {link}\n"
+        f"• **Số lượng:** `{quantity:,}`\n"
+        f"• **Đơn giá:** `{format_money(rate_val)} / 1.000`\n"
+        f"👉 **TỔNG TIỀN THANH TOÁN:** **{format_money(total_price)}**\n\n"
+        f"Vui lòng nhấn **Xác nhận đặt** để hoàn tất!"
+    )
+
+    view = ConfirmOrderView(
+        user_id=interaction.user.id,
+        service_id=service_id,
+        link=link,
+        quantity=quantity,
+        total_price=total_price
+    )
+    
+    await interaction.followup.send(confirm_msg, view=view)
+
+# ==================== 7. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
 
 @bot.tree.command(name="check", description="Menu tra cứu dịch vụ Facebook & TikTok")
 async def check_services(interaction: discord.Interaction):
@@ -288,10 +376,10 @@ async def check_services(interaction: discord.Interaction):
         return
 
     await interaction.response.defer(ephemeral=True)
-    services = smm_api_request({'action': 'services'})
+    fetch_services_cache()
 
-    if isinstance(services, list) and len(services) > 0:
-        view = PlatformSelectView(services)
+    if isinstance(SERVICES_CACHE, list) and len(SERVICES_CACHE) > 0:
+        view = PlatformSelectView(SERVICES_CACHE)
         await interaction.followup.send("🔍 **MENU TRA CÚU DỊCH VỤ SMM**\nVui lòng chọn nền tảng bạn cần kiểm tra:", view=view)
     else:
         await interaction.followup.send("❌ Không thể tra cứu danh sách dịch vụ lúc này.")
@@ -306,9 +394,9 @@ async def check_balance(interaction: discord.Interaction):
     result = smm_api_request({'action': 'balance'})
     
     if 'balance' in result:
-        raw_balance = int(float(result['balance']))
-        formatted_balance = f"{raw_balance:,}".replace(",", ".")
-        await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance} nghìn đồng**")
+        raw_balance = float(result['balance'])
+        formatted_balance = format_money(raw_balance)
+        await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance}**")
     else:
         await interaction.followup.send("❌ Không thể tra cứu số dư.")
 
@@ -324,23 +412,7 @@ async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: s
         return
 
     await interaction.response.defer()
-    payload = {
-        'action': 'add',
-        'service': id_dich_vu,
-        'link': link,
-        'quantity': so_luong
-    }
-    result = smm_api_request(payload)
-    
-    if 'order' in result:
-        await interaction.followup.send(
-            f"✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n"
-            f"• Mã Dịch Vụ: `{id_dich_vu}`\n"
-            f"• Mã Đơn Hàng: `{result['order']}`\n"
-            f"• Số lượng: `{so_luong}`"
-        )
-    else:
-        await interaction.followup.send(f"❌ **Lỗi tạo đơn:** {result.get('error', 'Lỗi không xác định.')}")
+    await process_order_with_confirmation(interaction, id_dich_vu, link, so_luong)
 
 @bot.tree.command(name="don", description="Tra cứu trạng thái đơn hàng")
 @app_commands.describe(order_id="Mã đơn hàng cần kiểm tra")
@@ -356,7 +428,7 @@ async def check_status(interaction: discord.Interaction, order_id: str):
     else:
         await interaction.followup.send("❌ Không tìm thấy thông tin đơn hàng này.")
 
-# ==================== 7. LỆNH ĐẶT NHANH ====================
+# ==================== 8. LỆNH ĐẶT NHANH ====================
 
 @bot.tree.command(name="fblike", description="Tăng Like Facebook nhanh (#7376 - Tối thiểu 50)")
 @app_commands.describe(link="Đường dẫn bài viết Facebook", so_luong="Số lượng cần tăng (tối thiểu 50)")
@@ -368,12 +440,7 @@ async def fb_like(interaction: discord.Interaction, link: str, so_luong: int = 5
         await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
         return
     await interaction.response.defer()
-    payload = {'action': 'add', 'service': "7376", 'link': link, 'quantity': so_luong}
-    result = smm_api_request(payload)
-    if 'order' in result:
-        await interaction.followup.send(f"✅ **ĐẶT LIKE FB THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
-    else:
-        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+    await process_order_with_confirmation(interaction, "7376", link, so_luong)
 
 @bot.tree.command(name="fbfollow", description="Tăng Follow Facebook nhanh (#7132 - Tối thiểu 50)")
 @app_commands.describe(link="Đường dẫn trang/trang cá nhân FB", so_luong="Số lượng cần tăng (tối thiểu 50)")
@@ -385,12 +452,7 @@ async def fb_follow(interaction: discord.Interaction, link: str, so_luong: int =
         await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
         return
     await interaction.response.defer()
-    payload = {'action': 'add', 'service': "7132", 'link': link, 'quantity': so_luong}
-    result = smm_api_request(payload)
-    if 'order' in result:
-        await interaction.followup.send(f"✅ **ĐẶT FOLLOW FB THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
-    else:
-        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+    await process_order_with_confirmation(interaction, "7132", link, so_luong)
 
 @bot.tree.command(name="ttlike", description="Tăng Like TikTok nhanh (#7236 - Tối thiểu 50)")
 @app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 50)")
@@ -402,12 +464,7 @@ async def tt_like(interaction: discord.Interaction, link: str, so_luong: int = 5
         await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
         return
     await interaction.response.defer()
-    payload = {'action': 'add', 'service': "7236", 'link': link, 'quantity': so_luong}
-    result = smm_api_request(payload)
-    if 'order' in result:
-        await interaction.followup.send(f"✅ **ĐẶT LIKE TIKTOK THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
-    else:
-        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+    await process_order_with_confirmation(interaction, "7236", link, so_luong)
 
 @bot.tree.command(name="ttview", description="Tăng View TikTok nhanh (#7240 - Tối thiểu 1000)")
 @app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 1000)")
@@ -419,12 +476,7 @@ async def tt_view(interaction: discord.Interaction, link: str, so_luong: int = 1
         await interaction.response.send_message("⚠️ Số lượng view TikTok đặt tối thiểu là **1000**!", ephemeral=True)
         return
     await interaction.response.defer()
-    payload = {'action': 'add', 'service': "7240", 'link': link, 'quantity': so_luong}
-    result = smm_api_request(payload)
-    if 'order' in result:
-        await interaction.followup.send(f"✅ **ĐẶT VIEW TIKTOK THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
-    else:
-        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+    await process_order_with_confirmation(interaction, "7240", link, so_luong)
 
 if __name__ == '__main__':
     bot.run(DISCORD_TOKEN)
