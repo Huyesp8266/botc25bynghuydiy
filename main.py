@@ -15,8 +15,7 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 
 # -------------------------------------------------------------
 # DANH SÁCH USER ID ĐƯỢC PHÉP DÙNG BOT (ADMIN)
-# Điền Discord User ID vào đây. Ví dụ: ADMIN_IDS = [123456789012345678]
-# Nếu danh sách trống [], TẤT CẢ mọi người đều có quyền dùng.
+# Nếu danh sách trống [], TẤT CẢ mọi người đều có quyền sử dụng.
 # -------------------------------------------------------------
 ADMIN_IDS = []
 
@@ -101,7 +100,7 @@ async def list_commands(interaction: discord.Interaction):
         "🟢 **Lệnh công khai:**\n"
         "• `/id` : Xem Discord User ID của bạn\n"
         "• `/checkquyen` : Kiểm tra bản thân có quyền dùng bot không\n"
-        "• `/list` : Xem danh sách các lệnh\n\n"
+        "• `/list` : Xem danh sách tất cả các lệnh\n\n"
         "🔑 **Lệnh quản lý quyền:**\n"
         "• `/danhsachquyen` : Xem danh sách ID có quyền dùng bot\n"
         "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
@@ -110,11 +109,11 @@ async def list_commands(interaction: discord.Interaction):
         "• `/sodu` : Kiểm tra số dư tài khoản web\n"
         "• `/don` : Tra cứu trạng thái đơn hàng\n"
         "• `/dat` : Đặt đơn tùy chỉnh (`id_dich_vu`, `link`, `so_luong`)\n\n"
-        "⚡ **Lệnh đặt nhanh:**\n"
+        "⚡ **Lệnh đặt nhanh (Tối thiểu 50):**\n"
         "• `/fblike` : Tăng Like Facebook (#7376)\n"
         "• `/fbfollow` : Tăng Follow Facebook (#7132)\n"
         "• `/ttlike` : Tăng Like TikTok (#7236)\n"
-        "• `/ttview` : Tăng View TikTok (#7240)"
+        "• `/ttview` : Tăng View TikTok (#7240 - Tối thiểu 1000)"
     )
     await interaction.response.send_message(help_text, ephemeral=True)
 
@@ -169,7 +168,7 @@ async def remove_permission(interaction: discord.Interaction, user_id: str):
     except ValueError:
         await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
 
-# ==================== 5. LỆNH DỊCH VỤ (ADMIN ONLY) ====================
+# ==================== 5. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
 
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
@@ -188,10 +187,14 @@ async def check_balance(interaction: discord.Interaction):
         await interaction.followup.send("❌ Không thể tra cứu số dư.")
 
 @bot.tree.command(name="dat", description="Đặt đơn cho bất kỳ dịch vụ phụ nào")
-@app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn bài viết/kênh", so_luong="Số lượng cần tăng")
+@app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn bài viết/kênh", so_luong="Số lượng cần tăng (tối thiểu 50)")
 async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: str, so_luong: int):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+
+    if so_luong < 50:
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
         return
 
     await interaction.response.defer()
@@ -213,22 +216,6 @@ async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: s
     else:
         await interaction.followup.send(f"❌ **Lỗi tạo đơn:** {result.get('error', 'Lỗi không xác định.')}")
 
-@bot.tree.command(name="fblike", description="Tăng Like Facebook nhanh (#7376)")
-async def fb_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
-    await place_order(interaction, "7376", link, so_luong)
-
-@bot.tree.command(name="fbfollow", description="Tăng Follow Facebook nhanh (#7132)")
-async def fb_follow(interaction: discord.Interaction, link: str, so_luong: int = 50):
-    await place_order(interaction, "7132", link, so_luong)
-
-@bot.tree.command(name="ttlike", description="Tăng Like TikTok nhanh (#7236)")
-async def tt_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
-    await place_order(interaction, "7236", link, so_luong)
-
-@bot.tree.command(name="ttview", description="Tăng View TikTok nhanh (#7240)")
-async def tt_view(interaction: discord.Interaction, link: str, so_luong: int = 1000):
-    await place_order(interaction, "7240", link, so_luong)
-
 @bot.tree.command(name="don", description="Tra cứu trạng thái đơn hàng")
 @app_commands.describe(order_id="Mã đơn hàng cần kiểm tra")
 async def check_status(interaction: discord.Interaction, order_id: str):
@@ -242,6 +229,76 @@ async def check_status(interaction: discord.Interaction, order_id: str):
         await interaction.followup.send(f"📊 Trạng thái đơn `{order_id}`: **{result['status']}** | Còn lại: `{result.get('remains', 'N/A')}`")
     else:
         await interaction.followup.send("❌ Không tìm thấy thông tin đơn hàng này.")
+
+# ==================== 6. LỆNH ĐẶT NHANH ====================
+
+@bot.tree.command(name="fblike", description="Tăng Like Facebook nhanh (#7376 - Tối thiểu 50)")
+@app_commands.describe(link="Đường dẫn bài viết Facebook", so_luong="Số lượng cần tăng (tối thiểu 50)")
+async def fb_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+    if so_luong < 50:
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        return
+    await interaction.response.defer()
+    payload = {'action': 'add', 'service': "7376", 'link': link, 'quantity': so_luong}
+    result = smm_api_request(payload)
+    if 'order' in result:
+        await interaction.followup.send(f"✅ **ĐẶT LIKE FB THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
+    else:
+        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+
+@bot.tree.command(name="fbfollow", description="Tăng Follow Facebook nhanh (#7132 - Tối thiểu 50)")
+@app_commands.describe(link="Đường dẫn trang/trang cá nhân FB", so_luong="Số lượng cần tăng (tối thiểu 50)")
+async def fb_follow(interaction: discord.Interaction, link: str, so_luong: int = 50):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+    if so_luong < 50:
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        return
+    await interaction.response.defer()
+    payload = {'action': 'add', 'service': "7132", 'link': link, 'quantity': so_luong}
+    result = smm_api_request(payload)
+    if 'order' in result:
+        await interaction.followup.send(f"✅ **ĐẶT FOLLOW FB THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
+    else:
+        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+
+@bot.tree.command(name="ttlike", description="Tăng Like TikTok nhanh (#7236 - Tối thiểu 50)")
+@app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 50)")
+async def tt_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+    if so_luong < 50:
+        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=True)
+        return
+    await interaction.response.defer()
+    payload = {'action': 'add', 'service': "7236", 'link': link, 'quantity': so_luong}
+    result = smm_api_request(payload)
+    if 'order' in result:
+        await interaction.followup.send(f"✅ **ĐẶT LIKE TIKTOK THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
+    else:
+        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
+
+@bot.tree.command(name="ttview", description="Tăng View TikTok nhanh (#7240 - Tối thiểu 1000)")
+@app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 1000)")
+async def tt_view(interaction: discord.Interaction, link: str, so_luong: int = 1000):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+        return
+    if so_luong < 1000:
+        await interaction.response.send_message("⚠️ Số lượng view TikTok đặt tối thiểu là **1000**!", ephemeral=True)
+        return
+    await interaction.response.defer()
+    payload = {'action': 'add', 'service': "7240", 'link': link, 'quantity': so_luong}
+    result = smm_api_request(payload)
+    if 'order' in result:
+        await interaction.followup.send(f"✅ **ĐẶT VIEW TIKTOK THÀNH CÔNG!**\n• Mã Đơn: `{result['order']}`\n• Số lượng: `{so_luong}`")
+    else:
+        await interaction.followup.send(f"❌ **Lỗi:** {result.get('error', 'Lỗi tạo đơn.')}")
 
 if __name__ == '__main__':
     bot.run(DISCORD_TOKEN)
