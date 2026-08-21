@@ -27,11 +27,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=utf-8")
         self.end_headers()
-        # Đã mã hóa UTF-8 chuẩn để tránh lỗi SyntaxError bytes
         response_text = "Bot Discord đang hoạt động 24/7!"
         self.wfile.write(response_text.encode('utf-8'))
 
-    # Tắt bớt log HTTP để làm sạch bảng điều khiển Render
     def log_message(self, format, *args):
         return
 
@@ -41,7 +39,6 @@ def run_http_server():
     print(f"Đã mở Web Server giả lập thành công trên port {port}")
     server.serve_forever()
 
-# Chạy Web Server trên luồng phụ
 threading.Thread(target=run_http_server, daemon=True).start()
 
 # ==================== 2. KHỞI TẠO DISCORD BOT ====================
@@ -86,7 +83,8 @@ async def get_my_id(interaction: discord.Interaction):
 
 # ==================== 4. LỆNH CẦN CẤP QUYỀN (ADMIN ONLY) ====================
 
-@bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web (VNĐ)")
+# Lệnh /sodu - Hiển thị chuẩn theo đơn vị "nghìn đồng" với tối đa 3 số thập phân
+@bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
@@ -96,11 +94,11 @@ async def check_balance(interaction: discord.Interaction):
     result = smm_api_request({'action': 'balance'})
     
     if 'balance' in result:
-        # Tự động quy đổi từ nghìn đồng sang VNĐ chuẩn
         raw_balance = float(result['balance'])
-        real_balance = int(raw_balance * 1000)
-        formatted_balance = "{:,}".format(real_balance).replace(",", ".")
-        await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance} VNĐ**")
+        # Lấy tối đa 3 số sau dấu phẩy và định dạng dấu phẩy tiếng Việt
+        formatted_balance = f"{raw_balance:,.3f}".rstrip('0').rstrip('.').replace(",", "X").replace(".", ",").replace("X", ".")
+        
+        await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance} nghìn đồng**")
     else:
         await interaction.followup.send("❌ Không thể tra cứu số dư.")
 
