@@ -14,9 +14,12 @@ API_KEY = os.getenv('API_KEY')
 API_URL = "https://dichvu.c25tool.net/api/v2"
 
 # -------------------------------------------------------------
-# DANH SÁCH USER ID ĐƯỢC PHÉP DÙNG BOT (ADMIN)
-# Nếu danh sách trống [], TẤT CẢ mọi người đều có quyền sử dụng.
+# CẤU HÌNH QUYỀN VÀ CHỦ BOT (OWNER)
 # -------------------------------------------------------------
+# Nhập User ID của BẠN (Chủ Bot) vào đây để có toàn quyền thêm/xóa admin:
+OWNER_ID = 1530913781515812925  # <--- THAY ID DISCORD CỦA BẠN VÀO ĐÂY (ví dụ: 123456789012345678)
+
+# Danh sách ID được phép sử dụng bot (ADMIN):
 ADMIN_IDS = []
 
 # ==================== 1. WEB SERVER GIẢ LẬP ĐỂ RENDER GIỮ BOT 24/7 ====================
@@ -46,6 +49,7 @@ class SMMBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True  # Bật intent lấy thông tin member
         super().__init__(command_prefix="/", intents=intents)
 
     async def setup_hook(self):
@@ -63,9 +67,15 @@ def smm_api_request(data):
         return {"error": str(e)}
 
 def is_authorized(user_id: int) -> bool:
-    if not ADMIN_IDS:
+    # Nếu không cài danh sách admin & chưa cài OWNER_ID thì cho phép tất cả
+    if not ADMIN_IDS and OWNER_ID == 0:
         return True
-    return user_id in ADMIN_IDS
+    return user_id == OWNER_ID or user_id in ADMIN_IDS
+
+def is_owner(user_id: int) -> bool:
+    if OWNER_ID == 0:  # Nếu chưa cài OWNER_ID thì tạm thời ai cũng có thể dùng lệnh owner
+        return True
+    return user_id == OWNER_ID
 
 @bot.event
 async def on_ready():
@@ -82,7 +92,12 @@ async def get_my_id(interaction: discord.Interaction):
 
 @bot.tree.command(name="checkquyen", description="Kiểm tra bản thân có quyền dùng Bot hay không")
 async def check_my_permission(interaction: discord.Interaction):
-    if is_authorized(interaction.user.id):
+    if is_owner(interaction.user.id):
+        await interaction.response.send_message(
+            f"👑 **{interaction.user.name}**, bạn là **CHỦ BOT (OWNER)**!", 
+            ephemeral=True
+        )
+    elif is_authorized(interaction.user.id):
         await interaction.response.send_message(
             f"✅ **{interaction.user.name}**, bạn **ĐƯỢC PHÉP** sử dụng Bot!", 
             ephemeral=True
@@ -101,8 +116,8 @@ async def list_commands(interaction: discord.Interaction):
         "• `/id` : Xem Discord User ID của bạn\n"
         "• `/checkquyen` : Kiểm tra bản thân có quyền dùng bot không\n"
         "• `/list` : Xem danh sách tất cả các lệnh\n\n"
-        "🔑 **Lệnh quản lý quyền:**\n"
-        "• `/danhsachquyen` : Xem danh sách ID có quyền dùng bot\n"
+        "👑 **Lệnh Chủ Bot (Owner Only):**\n"
+        "• `/danhsachquyen` : Xem chi tiết danh sách người dùng được cấp quyền\n"
         "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
         "• `/goquyen` : Gỡ quyền dùng bot của User ID\n\n"
         "💰 **Lệnh Dịch vụ:**\n"
@@ -117,45 +132,67 @@ async def list_commands(interaction: discord.Interaction):
     )
     await interaction.response.send_message(help_text, ephemeral=True)
 
-# ==================== 4. LỆNH QUẢN LÝ QUYỀN (ADMIN ONLY) ====================
+# ==================== 4. LỆNH QUẢN LÝ QUYỀN (CHỈ CHỦ BOT DÙNG ĐƯỢC) ====================
 
-@bot.tree.command(name="danhsachquyen", description="Xem danh sách User ID được phép dùng Bot")
+@bot.tree.command(name="danhsachquyen", description="Xem danh sách chi tiết người dùng được phép sử dụng Bot")
 async def list_authorized_users(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
         return
 
-    if not ADMIN_IDS:
-        msg = "🔓 **Chế độ công khai:** Tất cả mọi người đều có thể sử dụng Bot!"
-    else:
-        msg = "📋 **DANH SÁCH USER ID ĐƯỢC PHÉP DÙNG BOT:**\n"
-        for uid in ADMIN_IDS:
-            msg += f"• `<@{uid}>` (ID: `{uid}`)\n"
-            
-    await interaction.response.send_message(msg, ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
 
-@bot.tree.command(name="themquyen", description="Thêm quyền dùng Bot cho một Discord User ID")
+    msg = "📋 **DANH SÁCH NGƯỜI DÙNG ĐƯỢC PHÉP SỬ DỤNG BOT**\n\n"
+    
+    # Hiển thị Owner
+    if OWNER_ID != 0:
+        try:
+            owner_user = await bot.fetch_user(OWNER_ID)
+            msg += f"👑 **Chủ Bot (Owner):**\n• Tên: **{owner_user.name}** (`{owner_user}`)\n• ID: `{OWNER_ID}`\n\n"
+        except Exception:
+            msg += f"👑 **Chủ Bot (Owner):** ID `{OWNER_ID}`\n\n"
+    
+    # Hiển thị danh sách Admin/User được cấp quyền
+    if not ADMIN_IDS:
+        msg += "🔓 **Chế độ:** Chưa có Admin nào được thêm (Hoặc đang công khai nếu chưa cài Owner ID)."
+    else:
+        msg += "👥 **Danh sách Admin/Người dùng được cấp quyền:**\n"
+        for idx, uid in enumerate(ADMIN_IDS, start=1):
+            try:
+                user = await bot.fetch_user(uid)
+                msg += f"{idx}. **{user.global_name or user.name}** (@{user.name})\n   └── 🆔 ID: `{uid}`\n"
+            except Exception:
+                msg += f"{idx}. User ID: `{uid}` (Không thể lấy thông tin chi tiết)\n"
+
+    await interaction.followup.send(msg)
+
+@bot.tree.command(name="themquyen", description="[Chủ bot] Thêm quyền dùng Bot cho một Discord User ID")
 @app_commands.describe(user_id="Nhập Discord User ID cần cấp quyền")
 async def add_permission(interaction: discord.Interaction, user_id: str):
-    if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+    if not is_owner(interaction.user.id):
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền thêm người dùng!", ephemeral=True)
         return
 
     try:
         uid = int(user_id)
         if uid in ADMIN_IDS:
-            await interaction.response.send_message(f"⚠️ User ID `{uid}` đã có quyền từ trước!", ephemeral=True)
+            await interaction.response.send_message(f"⚠️ User ID `{uid}` đã có trong danh sách từ trước!", ephemeral=True)
         else:
             ADMIN_IDS.append(uid)
-            await interaction.response.send_message(f"✅ Đã cấp quyền sử dụng Bot thành công cho User ID: `{uid}`", ephemeral=True)
+            try:
+                user = await bot.fetch_user(uid)
+                info = f"**{user.name}** (`{uid}`)"
+            except Exception:
+                info = f"`{uid}`"
+            await interaction.response.send_message(f"✅ Đã cấp quyền sử dụng Bot thành công cho: {info}", ephemeral=True)
     except ValueError:
         await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
 
-@bot.tree.command(name="goquyen", description="Gỡ quyền dùng Bot của một Discord User ID")
+@bot.tree.command(name="goquyen", description="[Chủ bot] Gỡ quyền dùng Bot của một Discord User ID")
 @app_commands.describe(user_id="Nhập Discord User ID cần gỡ quyền")
 async def remove_permission(interaction: discord.Interaction, user_id: str):
-    if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=True)
+    if not is_owner(interaction.user.id):
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền gỡ người dùng!", ephemeral=True)
         return
 
     try:
@@ -164,7 +201,7 @@ async def remove_permission(interaction: discord.Interaction, user_id: str):
             ADMIN_IDS.remove(uid)
             await interaction.response.send_message(f"🗑️ Đã gỡ quyền sử dụng Bot của User ID: `{uid}`", ephemeral=True)
         else:
-            await interaction.response.send_message(f"⚠️ User ID `{uid}` không có trong danh sách được phép!", ephemeral=True)
+            await interaction.response.send_message(f"⚠️ User ID `{uid}` không có trong danh sách được cấp quyền!", ephemeral=True)
     except ValueError:
         await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=True)
 
