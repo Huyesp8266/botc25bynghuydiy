@@ -159,7 +159,7 @@ async def on_ready():
 @bot.tree.command(name="getkey", description="Lấy link vượt key để sử dụng Bot 15 phút")
 async def get_key_command(interaction: discord.Interaction):
     msg = (
-        f"🔗 **LINK LẤY KEY SỬ DỤNG BOT (5 TIẾNG):**\n"
+        f"🔗 **LINK LẤY KEY SỬ DỤNG BOT (15 phút):**\n"
         f"👉 Link vượt key: {LINK_RUT_GON}\n\n"
         f"📌 *Hướng dẫn:* Vượt qua link trên để nhận Key, sau đó dùng lệnh `/nhapkey <Mã-Key>` để kích hoạt.\n"
         f"-----------------------------------------\n"
