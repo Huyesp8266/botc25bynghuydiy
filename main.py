@@ -153,7 +153,27 @@ def format_money(amount: float) -> str:
 async def on_ready():
     print(f'Bot đã kết nối thành công: {bot.user}')
     fetch_services_cache()
-
+# ==================== SỰ KIỆN CHÀO MỪNG THÀNH VIÊN MỚI ====================
+@bot.event
+async def on_member_join(member):
+    # Tìm kênh gửi tin nhắn (kênh tên "welcome", "chao-mung" hoặc kênh hệ thống của server)
+    channel = discord.utils.get(member.guild.text_channels, name="welcome") or member.guild.system_channel
+    
+    if channel:
+        welcome_msg = (
+            f"🎉 **CHÀO MỪNG THÀNH VIÊN MỚI!** 🎉\n\n"
+            f"👋 Chào mừng <@{member.id}> đã tham gia **{member.guild.name}**!\n\n"
+            f"👑 **Chủ sở hữu Bot:** <@{OWNER_ID}>\n"
+            f"🤖 **Giới thiệu Bot:** Hệ thống hỗ trợ tra cứu & đặt đơn dịch vụ SMM tự động.\n\n"
+            f"📌 **HƯỚNG DẪN SỬ DỤNG BOT NHANH:**\n"
+            f"1️⃣ Dùng lệnh `/getkey` để lấy link nhận Key dùng Bot 15 phút.\n"
+            f"2️⃣ Dùng lệnh `/nhapkey <Mã-Key>` để kích hoạt quyền dùng Bot.\n"
+            f"3️⃣ Dùng lệnh `/check` để chọn nền tảng & xem danh sách dịch vụ.\n"
+            f"4️⃣ Dùng lệnh `/list` để xem toàn bộ danh sách lệnh hỗ trợ.\n\n"
+            f"💬 *Chúc bạn có trải nghiệm tuyệt vời tại máy chủ!*"
+        )
+        await channel.send(welcome_msg)
+        
 # ==================== 3. HỆ THỐNG GETKEY & NHẬP KEY ====================
 
 @bot.tree.command(name="getkey", description="Lấy link vượt key để sử dụng Bot 15 phút")
