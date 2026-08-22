@@ -319,7 +319,7 @@ async def redeem_key(interaction: discord.Interaction, key: str):
     )
     await interaction.response.send_message(msg, ephemeral=False)
 
-# ==================== 4. CÁC LỆNH CÔNG KHAI & TRA CÚU ====================
+# ==================== 4. CÁC LỆNH TIỆN ÍCH & THÔNG TIN ====================
 
 @bot.tree.command(name="id", description="Xem Discord User ID")
 async def get_my_id(interaction: discord.Interaction):
@@ -338,7 +338,44 @@ async def check_my_permission(interaction: discord.Interaction):
     else:
         await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Bạn chưa có quyền!"), ephemeral=False)
 
-# ==================== 5. XÁC NHẬN VÀ TẠO ĐƠN HÀNG ====================
+@bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản SMM Panel")
+async def check_balance(interaction: discord.Interaction):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Bạn cần nhập key để dùng bot!"), ephemeral=False)
+        return
+    await interaction.response.defer()
+    res = smm_api_request({'action': 'balance'})
+    if 'balance' in res:
+        balance = res.get('balance')
+        currency = res.get('currency', 'USD')
+        await interaction.followup.send(f"💰 **Số dư tài khoản hệ thống:** `{balance} {currency}`")
+    else:
+        await interaction.followup.send(f"❌ **Lỗi:** {res.get('error', 'Không thể lấy số dư.')}")
+
+@bot.tree.command(name="don", description="Kiểm tra trạng thái đơn hàng")
+@app_commands.describe(order_id="Mã đơn hàng cần kiểm tra")
+async def check_order_status(interaction: discord.Interaction, order_id: str):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Bạn cần nhập key để dùng bot!"), ephemeral=False)
+        return
+    await interaction.response.defer()
+    res = smm_api_request({'action': 'status', 'order': order_id})
+    if 'status' in res:
+        status = res.get('status')
+        charge = res.get('charge', '0')
+        start_count = res.get('start_count', '0')
+        remains = res.get('remains', '0')
+        await interaction.followup.send(
+            f"📦 **Thông tin đơn hàng `#{order_id}`:**\n"
+            f"• Trạng thái: **{status}**\n"
+            f"• Chi phí: `{charge}`\n"
+            f"• Số lượng ban đầu: `{start_count}`\n"
+            f"• Còn lại: `{remains}`"
+        )
+    else:
+        await interaction.followup.send(f"❌ **Lỗi:** {res.get('error', 'Không tìm thấy mã đơn hàng.')}")
+
+# ==================== 5. HỆ THỐNG ĐẶT ĐƠN & DỊCH VỤ ====================
 
 class ConfirmOrderView(discord.ui.View):
     def __init__(self, user_id, service_id, link, quantity, total_price):
@@ -394,16 +431,31 @@ async def process_order_with_confirmation(interaction: discord.Interaction, serv
     view = ConfirmOrderView(interaction.user.id, service_id, link, quantity, total_price)
     await interaction.followup.send(confirm_msg, view=view)
 
-@bot.tree.command(name="dat", description="Đặt đơn dịch vụ bất kỳ")
+@bot.tree.command(name="dat", description="Đặt đơn dịch vụ bất kỳ theo ID")
+@app_commands.describe(id_dich_vu="ID dịch vụ trên hệ thống", link="Đường dẫn bài viết/profile", so_luong="Số lượng cần mua")
 async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: str, so_luong: int):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Chưa có quyền!"), ephemeral=False)
+        await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Bạn chưa có quyền!"), ephemeral=False)
         return
     if so_luong < 50:
         await interaction.response.send_message("⚠️ Số lượng tối thiểu là **50**!", ephemeral=False)
         return
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, id_dich_vu, link, so_luong)
+
+# Các lệnh mạng xã hội phổ biến (Ví dụ: Facebook Like, Follow,...)
+@bot.tree.command(name="fblike", description="Tăng Like bài viết Facebook")
+@app_commands.describe(link="Link bài viết Facebook", so_luong="Số lượng like cần tăng")
+async def fb_like(interaction: discord.Interaction, link: str, so_luong: int):
+    if not is_authorized(interaction.user.id):
+        await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Bạn cần nhập key!"), ephemeral=False)
+        return
+    if so_luong < 50:
+        await interaction.response.send_message("⚠️ Số lượng tối thiểu là 50!", ephemeral=False)
+        return
+    await interaction.response.defer()
+    # Thay '123' bằng ID dịch vụ Facebook Like thực tế của bạn trên SMM Panel
+    await process_order_with_confirmation(interaction, "123", link, so_luong)
 
 if __name__ == '__main__':
     bot.run(DISCORD_TOKEN)
