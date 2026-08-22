@@ -20,7 +20,7 @@ API_URL = "https://dichvu.c25tool.net/api/v2"
 # -------------------------------------------------------------
 # CẤU HÌNH BOT
 # -------------------------------------------------------------
-LINK_RUT_GON = "https://link4m.net/oWcrW"
+LINK_RUT_GON = "https://link4m.org/go/DF5mgo2"
 OWNER_ID = 1530913781515812925
 ADMIN_IDS = [1530913781515812925]
 
