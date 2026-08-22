@@ -18,15 +18,11 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 API_KEY = os.getenv('API_KEY')
 API_URL = "https://dichvu.c25tool.net/api/v2"
 
-LINK4M_API_TOKEN = os.getenv('LINK4M_TOKEN', '6a892205f14926198544e441')
-WEB_DOMAIN = os.getenv('WEB_DOMAIN', 'https://botc25bynghuydiy.onrender.com')
-
 OWNER_ID = 1530913781515812925
 ADMIN_IDS = [1530913781515812925]
 
 KEYS_DATABASE = {}
 USER_EXPIRATION = {}
-SERVICES_CACHE = []
 
 # ==================== ĐỌC VÀ LƯU TIN NHẮN TỪ JSON ====================
 MESSAGES_FILE = "messages.json"
@@ -39,9 +35,7 @@ def load_messages():
         "msg_nhapkey_used": "⚠️ **Key này đã được sử dụng rồi!**",
         "msg_nhapkey_success": "🎉 **KÍCH HOẠT KEY THÀNH CÔNG!**\n👤 Người dùng: <@{user_id}>\n🔑 Key: `{key}`\n⏰ Hạn sử dụng: **{minutes} Phút** (Đến: `{time_str}`)",
         "msg_not_authorized": "❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.",
-        "msg_owner_only": "❌ Chỉ **Chủ Bot** mới có quyền dùng lệnh này!",
-        "msg_order_confirm": "⚠️ **XÁC NHẬN ĐẶT ĐƠN**\n\n• **Người đặt:** <@{user_id}>\n• **Dịch vụ:** {service_name} (`#{service_id}`)\n• **Link:** {link}\n• **Số lượng:** `{quantity}`\n👉 **TỔNG TIỀN:** **{total_price}**",
-        "msg_order_success": "✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n• Người đặt: <@{user_id}>\n• Mã Đơn Hàng: `{order_id}`\n• Số lượng: `{quantity}`\n• Tổng thanh toán: **{total_price}**"
+        "msg_owner_only": "❌ Chỉ **Chủ Bot** mới có quyền dùng lệnh này!"
     }
     if os.path.exists(MESSAGES_FILE):
         try:
@@ -65,77 +59,7 @@ def save_messages():
 
 # ==================== 1. FLASK WEB SERVER ====================
 app = Flask(__name__)
-app.secret_key = os.getenv('FLASK_SECRET_KEY', 'secret_key_nghuydiy_1530913781515812925')
-
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lấy Key Kích Hoạt Bot</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: #1e293b; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; max-width: 400px; width: 90%; border: 1px solid #334155; }
-        h2 { color: #38bdf8; margin-bottom: 10px; }
-        p { color: #94a3b8; font-size: 14px; }
-        .key-box { background: #0f172a; border: 2px dashed #38bdf8; padding: 15px; border-radius: 8px; font-size: 20px; font-weight: bold; color: #4ade80; letter-spacing: 1px; margin: 20px 0; word-break: break-all; }
-        .btn { background: #0284c7; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; text-decoration: none; display: inline-block; }
-        .btn:hover { background: #0369a1; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h2>🔑 KEY KÍCH HOẠT BOT</h2>
-        <p>Sao chép key bên dưới và dùng lệnh <b>/nhapkey</b> trong Discord để dùng Bot!</p>
-        <div class="key-box" id="keyText">{{ key }}</div>
-        <button class="btn" onclick="copyKey()">Sao Chép Key</button>
-    </div>
-    <script>
-        function copyKey() {
-            var keyText = document.getElementById("keyText").innerText;
-            navigator.clipboard.writeText(keyText);
-            alert("Đã sao chép Key: " + keyText);
-        }
-    </script>
-</body>
-</html>
-"""
-
-def generate_random_key():
-    random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-    return f"@nghuydiy-{random_str}"
-
-def shorten_link_link4m(destination_url):
-    try:
-        api_url = f"https://link4m.co/api?api={LINK4M_API_TOKEN}&url={destination_url}"
-        res = requests.get(api_url, timeout=10).json()
-        if res.get("status") == "success":
-            return res.get("shortenedUrl")
-    except Exception as e:
-        print(f"Lỗi API Link4M: {e}")
-    return destination_url
-
-@app.route('/')
-def home():
-    return "Bot Discord đang hoạt động 24/7!"
-
-@app.route('/getkey-site')
-def get_key_site():
-    hours = 5.0
-    if 'current_key' in session:
-        user_key = session['current_key']
-        if KEYS_DATABASE.get(user_key, {}).get("used", False):
-            new_key = generate_random_key()
-            KEYS_DATABASE[new_key] = {"used": False, "hours": hours, "created_at": time.time()}
-            session['current_key'] = new_key
-            return render_template_string(HTML_TEMPLATE, key=new_key)
-        return render_template_string(HTML_TEMPLATE, key=user_key)
-    
-    new_key = generate_random_key()
-    KEYS_DATABASE[new_key] = {"used": False, "hours": hours, "created_at": time.time()}
-    session['current_key'] = new_key
-    return render_template_string(HTML_TEMPLATE, key=new_key)
+app.secret_key = 'secret_key_nghuydiy_1530913781515812925'
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -159,10 +83,18 @@ bot = SMMBot()
 def smm_api_request(data):
     data['key'] = API_KEY
     try:
-        response = requests.post(API_URL, data=data, timeout=10)
+        response = requests.post(API_URL, data=data, timeout=15)
         return response.json()
     except Exception as e:
         return {"error": str(e)}
+
+def fetch_all_services():
+    try:
+        res = requests.get(f"{API_URL}?key={API_KEY}&action=services", timeout=15)
+        return res.json()
+    except Exception as e:
+        print(f"Lỗi lấy danh sách dịch vụ API: {e}")
+        return []
 
 def is_authorized(user_id: int) -> bool:
     if user_id == OWNER_ID or user_id in ADMIN_IDS:
@@ -173,9 +105,6 @@ def is_authorized(user_id: int) -> bool:
 
 def is_owner(user_id: int) -> bool:
     return user_id == OWNER_ID
-
-def format_money(amount: float) -> str:
-    return f"{int(round(amount)):,}".replace(",", ".") + "đ"
 
 @bot.event
 async def on_ready():
@@ -216,22 +145,22 @@ async def list_commands(interaction: discord.Interaction):
         "• `/goquyen` : Gỡ quyền dùng bot của User ID\n"
         "• `/suatinnhan` : Chỉnh sửa tin nhắn hệ thống\n\n"
         "💰 **Lệnh Dịch vụ:**\n"
-        "• `/check` : Menu chọn dịch vụ Facebook / TikTok đa cấp độ\n"
+        "• `/check` : Menu chọn TOÀN BỘ dịch vụ trên Web theo danh mục\n"
         "• `/sodu` : Kiểm tra số dư tài khoản web\n"
         "• `/don` : Tra cứu trạng thái đơn hàng\n"
         "• `/dat` : Đặt đơn tùy chỉnh (`id_dich_vu`, `link`, `so_luong`)\n\n"
-        "⚡ **Lệnh đặt nhanh (Tối thiểu 50):**\n"
+        "⚡ **Lệnh đặt nhanh:**\n"
         "• `/fblike` : Tăng Like Facebook (#7376)\n"
         "• `/fbfollow` : Tăng Follow Facebook (#7132)\n"
         "• `/ttlike` : Tăng Like TikTok (#7236)\n"
-        "• `/ttview` : Tăng View TikTok (#7240 - Tối thiểu 1000)"
+        "• `/ttview` : Tăng View TikTok (#7240)"
     )
     await interaction.response.send_message(menu_text)
 
 class KeyOptionSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="1 Link - Hạn dùng 30 phút", value="0.5", description="Vượt 1 link Link4M", emoji="⚡"),
+            discord.SelectOption(label="1 Link - Hạn dùng 30 phút", value="0.5", description="Vượt link nhận key 30 phút", emoji="⚡"),
             discord.SelectOption(label="2 Link - Hạn dùng 1 tiếng", value="1.0", description="Vượt link nhận key 1 tiếng", emoji="⏱️"),
             discord.SelectOption(label="3 Link - Hạn dùng 5 tiếng", value="5.0", description="Vượt link nhận key 5 tiếng", emoji="🚀"),
         ]
@@ -240,8 +169,8 @@ class KeyOptionSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
         hours = float(self.values[0])
-        short_url = shorten_link_link4m(f"{WEB_DOMAIN}/getkey-site")
-        msg = MSGS.get("msg_getkey_success", "").format(minutes=int(hours * 60), short_url=short_url, owner_id=OWNER_ID)
+        fixed_link = "https://link4m.net/oWcrW"
+        msg = MSGS.get("msg_getkey_success", "").format(minutes=int(hours * 60), short_url=fixed_link, owner_id=OWNER_ID)
         await interaction.followup.send(msg)
 
 class KeyOptionView(discord.ui.View):
@@ -314,101 +243,65 @@ async def remove_permission(interaction: discord.Interaction, user_id: str):
     except ValueError:
         await interaction.response.send_message("❌ User ID không hợp lệ!")
 
-class EditMessageModal(discord.ui.Modal):
-    def __init__(self, key_name: str, current_content: str):
-        super().__init__(title=f"Sửa Tin Nhắn: {key_name}")
-        self.key_name = key_name
-        self.new_content = discord.ui.TextInput(
-            label=f"Nội dung key: {key_name}",
-            style=discord.TextStyle.paragraph,
-            default=current_content,
-            required=True,
-            max_length=2000
-        )
-        self.add_item(self.new_content)
+# ==================== 💰 TỰ ĐỘNG NẠP TẤT CẢ DỊCH VỤ WEB VÀO /CHECK ====================
 
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        val = self.new_content.value.strip()
-        MSGS[self.key_name] = val
-        if save_messages():
-            await interaction.followup.send(f"✅ **ĐÃ CẬP NHẬT THÀNH CÔNG!**\n🔑 **Key:** `{self.key_name}`\n📝 **Nội dung mới:**\n>>> {val}")
-        else:
-            await interaction.followup.send("❌ Không thể lưu vào file `messages.json`!")
-
-class SelectKeyToEdit(discord.ui.Select):
-    def __init__(self):
-        options = [discord.SelectOption(label=k[:100], description=MSGS[k][:50] + "...", value=k) for k in MSGS.keys()]
-        super().__init__(placeholder="📌 Chọn tin nhắn cần chỉnh sửa...", min_values=1, max_values=1, options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(EditMessageModal(self.values[0], MSGS.get(self.values[0], "")))
-
-class SelectKeyView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-        self.add_item(SelectKeyToEdit())
-
-@bot.tree.command(name="suatinnhan", description="[Chủ bot] Sửa tin nhắn hệ thống")
-async def edit_msg_command(interaction: discord.Interaction):
-    if not is_owner(interaction.user.id):
-        await interaction.response.send_message(MSGS.get("msg_owner_only", "❌ Chỉ Chủ Bot!"))
-        return
-    await interaction.response.send_message("📋 Chọn tin nhắn bạn muốn chỉnh sửa:", view=SelectKeyView())
-
-# ==================== 💰 LỆNH DỊCH VỤ & GIAO DIỆN /CHECK ====================
-
-class ServiceSelect(discord.ui.Select):
-    def __init__(self):
-        options = [
-            discord.SelectOption(label="Facebook Services", description="Tăng Like, Follow Facebook", emoji="📘", value="fb"),
-            discord.SelectOption(label="TikTok Services", description="Tăng Like, View TikTok", emoji="🎵", value="tt"),
-            discord.SelectOption(label="Instagram Services", description="Tăng Like, Follow Instagram", emoji="📸", value="ig"),
-            discord.SelectOption(label="YouTube Services", description="Tăng Sub, View YouTube", emoji="🔴", value="yt"),
-        ]
-        super().__init__(placeholder="📌 Chọn nền tảng dịch vụ bạn muốn dùng...", min_values=1, max_values=1, options=options)
+class CategorySelect(discord.ui.Select):
+    def __init__(self, categorized_services):
+        self.categorized_services = categorized_services
+        options = []
+        for cat in categorized_services.keys():
+            options.append(discord.SelectOption(
+                label=cat[:100],
+                description=f"Xem {len(categorized_services[cat])} dịch vụ thuộc nhóm này",
+                emoji="📌"
+            ))
+        super().__init__(placeholder="👉 Chọn danh mục dịch vụ trên Web...", min_values=1, max_values=1, options=options[:25])
 
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        selected = self.values[0]
-        
-        if selected == "fb":
-            msg = (
-                "📘 **DỊCH VỤ FACEBOOK ĐA CẤP ĐỘ:**\n"
-                "• `/fblike <link> <so_luong>` — Tăng Like bài viết (#7376)\n"
-                "• `/fbfollow <link> <so_luong>` — Tăng Sub/Follow Trang cá nhân (#7132)\n"
-                "👉 *Sử dụng lệnh `/dat <id> <link> <so_luong>` để chạy ID tùy chỉnh.*"
-            )
-        elif selected == "tt":
-            msg = (
-                "🎵 **DỊCH VỤ TIKTOK ĐA CẤP ĐỘ:**\n"
-                "• `/ttlike <link> <so_luong>` — Tăng Like Video TikTok (#7236)\n"
-                "• `/ttview <link> <so_luong>` — Tăng View Video TikTok (#7240)\n"
-                "👉 *Sử dụng lệnh `/dat <id> <link> <so_luong>` để chạy ID tùy chỉnh.*"
-            )
-        elif selected == "ig":
-            msg = "📸 **DỊCH VỤ INSTAGRAM:**\n• Dùng lệnh `/dat <id> <link> <so_luong>` với ID dịch vụ Instagram."
-        elif selected == "yt":
-            msg = "🔴 **DỊCH VỤ YOUTUBE:**\n• Dùng lệnh `/dat <id> <link> <so_luong>` với ID dịch vụ YouTube."
-        else:
-            msg = "❌ Không xác định được lựa chọn."
+        cat_name = self.values[0]
+        services = self.categorized_services.get(cat_name, [])
 
+        msg = f"📂 **DANH MỤC: {cat_name.upper()}**\n\n"
+        for s in services[:15]: # Giới hạn hiển thị 15 dịch vụ tiêu biểu để không vượt quá giới hạn tin nhắn
+            rate = f"{float(s.get('rate', 0)):,}đ"
+            msg += f"• **ID: `{s.get('service')}`** — {s.get('name')} | Giá: `{rate}` | Min: `{s.get('min')}` - Max: `{s.get('max')}`\n"
+
+        msg += f"\n👉 *Dùng lệnh `/dat <id_dich_vu> <link> <so_luong>` để đặt đơn!*"
         await interaction.followup.send(msg)
 
 class CheckMenuView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=60)
-        self.add_item(ServiceSelect())
+    def __init__(self, categorized_services):
+        super().__init__(timeout=120)
+        self.add_item(CategorySelect(categorized_services))
 
-@bot.tree.command(name="check", description="Menu chọn dịch vụ Facebook / TikTok đa cấp độ")
+@bot.tree.command(name="check", description="Menu chọn TOÀN BỘ dịch vụ hiện có trên Web theo danh mục")
 async def check_menu(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message(MSGS.get("msg_not_authorized", "❌ Bạn chưa có quyền dùng bot!"))
         return
-    await interaction.response.send_message(
-        "📌 **MENU CHỌN DỊCH VỤ ĐA CẤP ĐỘ**\nVui lòng chọn nền tảng bên dưới:",
-        view=CheckMenuView()
+
+    await interaction.response.defer()
+    all_services = fetch_all_services()
+
+    if not all_services or isinstance(all_services, dict) and "error" in all_services:
+        await interaction.followup.send("❌ Không thể kết nối lấy danh sách dịch vụ từ Web!")
+        return
+
+    # Tự động gom nhóm tất cả dịch vụ theo Category
+    categorized = {}
+    for s in all_services:
+        cat = s.get('category', 'Dịch vụ khác')
+        if cat not in categorized:
+            categorized[cat] = []
+        categorized[cat].append(s)
+
+    await interaction.followup.send(
+        f"🌐 **HỆ THỐNG ĐÃ TẢI THÀNH CÔNG {len(all_services)} DỊCH VỤ TỪ WEB**\nVui lòng chọn Danh Mục bạn muốn xem bên dưới:",
+        view=CheckMenuView(categorized)
     )
+
+# ==================== 🛠️ CÁC LỆNH SMM PANEL VÀ ĐẶT ĐƠN ====================
 
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
@@ -447,8 +340,6 @@ async def create_custom_order(interaction: discord.Interaction, id_dich_vu: str,
         await interaction.followup.send(f"✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n• Mã đơn: `{res['order']}`\n• ID Dịch vụ: `{id_dich_vu}`\n• Số lượng: `{so_luong:,}`")
     else:
         await interaction.followup.send(f"❌ Lỗi tạo đơn: {res.get('error', 'Lỗi không xác định')}")
-
-# ==================== ⚡ LỆNH ĐẶT NHANH ====================
 
 async def handle_quick_order(interaction: discord.Interaction, service_id: str, link: str, quantity: int, min_qty: int = 50):
     if not is_authorized(interaction.user.id):
