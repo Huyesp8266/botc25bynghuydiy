@@ -156,7 +156,7 @@ async def on_ready():
 
 # ==================== 3. HỆ THỐNG GETKEY & NHẬP KEY ====================
 
-@bot.tree.command(name="getkey", description="Lấy link vượt key để sử dụng Bot 5 tiếng")
+@bot.tree.command(name="getkey", description="Lấy link vượt key để sử dụng Bot 15 phút")
 async def get_key_command(interaction: discord.Interaction):
     msg = (
         f"🔗 **LINK LẤY KEY SỬ DỤNG BOT (5 TIẾNG):**\n"
@@ -168,7 +168,7 @@ async def get_key_command(interaction: discord.Interaction):
     )
     await interaction.response.send_message(msg, ephemeral=False)
 
-@bot.tree.command(name="nhapkey", description="Kích hoạt Key để dùng Bot trong 5 tiếng")
+@bot.tree.command(name="nhapkey", description="Kích hoạt Key để dùng Bot trong 15 phút")
 @app_commands.describe(key="Nhập mã Key bạn đã lấy được")
 async def redeem_key(interaction: discord.Interaction, key: str):
     key = key.strip()
@@ -182,7 +182,7 @@ async def redeem_key(interaction: discord.Interaction, key: str):
         return
 
     KEYS_DATABASE[key]["used"] = True
-    expire_time = time.time() + (5 * 3600)
+    expire_time = time.time() + (15 * 60)
     USER_EXPIRATION[interaction.user.id] = expire_time
 
     time_str = datetime.fromtimestamp(expire_time).strftime('%H:%M:%S %d/%m/%Y')
@@ -190,7 +190,7 @@ async def redeem_key(interaction: discord.Interaction, key: str):
         f"🎉 **KÍCH HOẠT KEY THÀNH CÔNG!**\n"
         f"👤 Người dùng: <@{interaction.user.id}>\n"
         f"🔑 Key: `{key}`\n"
-        f"⏰ Hạn sử dụng Bot: **5 Tiếng** (Đến: `{time_str}`)",
+        f"⏰ Hạn sử dụng Bot: **15 phút** (Đến: `{time_str}`)",
         ephemeral=False
     )
 
