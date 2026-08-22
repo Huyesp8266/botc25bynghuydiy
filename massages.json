@@ -1,0 +1,11 @@
+{
+  "msg_getkey_menu": "🔑 **CHỌN GÓI VƯỢT LINK LINK4M ĐỂ NẠP KEY:**",
+  "msg_getkey_success": "🔗 **LINK LẤY KEY ({minutes} PHÚT):**\n👉 Link vượt key của bạn: {short_url}\n\n📌 *Hướng dẫn:* Hoàn thành link vượt trên để lấy key, sau đó dùng lệnh `/nhapkey <Mã-Key>` để sử dụng Bot trong **{minutes} phút**.\n-----------------------------------------\n💬 **Mua Key VIP:** Contact <@{owner_id}> để không cần vượt link!",
+  "msg_nhapkey_invalid": "❌ **Key không hợp lệ** hoặc không tồn tại trên hệ thống!",
+  "msg_nhapkey_used": "⚠️ **Key này đã được sử dụng rồi!**",
+  "msg_nhapkey_success": "🎉 **KÍCH HOẠT KEY THÀNH CÔNG!**\n👤 Người dùng: <@{user_id}>\n🔑 Key: `{key}`\n⏰ Hạn sử dụng: **{minutes} Phút** (Đến: `{time_str}`)",
+  "msg_not_authorized": "❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.",
+  "msg_owner_only": "❌ Chỉ **Chủ Bot** mới có quyền dùng lệnh này!",
+  "msg_order_confirm": "⚠️ **XÁC NHẬN ĐẶT ĐƠN**\n\n• **Người đặt:** <@{user_id}>\n• **Dịch vụ:** {service_name} (`#{service_id}`)\n• **Link:** {link}\n• **Số lượng:** `{quantity}`\n👉 **TỔNG TIỀN:** **{total_price}**",
+  "msg_order_success": "✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n• Người đặt: <@{user_id}>\n• Mã Đơn Hàng: `{order_id}`\n• Số lượng: `{quantity}`\n• Tổng thanh toán: **{total_price}**"
+}
