@@ -1,6 +1,10 @@
 import os
+import random
+import string
+import time
+from datetime import datetime, timedelta
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask, render_template_string
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -14,34 +18,80 @@ API_KEY = os.getenv('API_KEY')
 API_URL = "https://dichvu.c25tool.net/api/v2"
 
 # -------------------------------------------------------------
-# CẤU HÌNH QUYỀN VÀ CHỦ BOT (OWNER)
+# CẤU HÌNH CỤ THỂ DÀNH CHO BOT CỦA BẠN
 # -------------------------------------------------------------
+LINK_RUT_GON = "https://link4m.net/go/gLanao"
 OWNER_ID = 1530913781515812925  # ID Chủ bot
-ADMIN_IDS = [1530913781515812925]  # Danh sách Admin mặc định
+ADMIN_IDS = [1530913781515812925]  # Danh sách Admin cố định
 
-# Cache tạm danh sách dịch vụ để lấy tên & tính toán giá
+# Domain Render tự động lấy từ môi trường Render
+RENDER_URL = os.getenv('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
+
+# Lưu trữ dữ liệu Key & Hạn dùng trong RAM
+KEYS_DATABASE = {}
+USER_EXPIRATION = {}
+
+# Cache danh sách dịch vụ
 SERVICES_CACHE = []
 
-# ==================== 1. WEB SERVER GIẢ LẬP ====================
+# ==================== 1. FLASK WEB SERVER (LẤY KEY & KEEP ALIVE) ====================
 
-class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html; charset=utf-8")
-        self.end_headers()
-        response_text = "Bot Discord đang hoạt động 24/7!"
-        self.wfile.write(response_text.encode('utf-8'))
+app = Flask(__name__)
 
-    def log_message(self, format, *args):
-        return
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lấy Key Kích Hoạt Bot</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f172a; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: #1e293b; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; max-width: 400px; width: 90%; border: 1px solid #334155; }
+        h2 { color: #38bdf8; margin-bottom: 10px; }
+        p { color: #94a3b8; font-size: 14px; }
+        .key-box { background: #0f172a; border: 2px dashed #38bdf8; padding: 15px; border-radius: 8px; font-size: 20px; font-weight: bold; color: #4ade80; letter-spacing: 1px; margin: 20px 0; word-break: break-all; }
+        .btn { background: #0284c7; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #0369a1; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🔑 KEY KÍCH HOẠT BOT</h2>
+        <p>Sao chép key bên dưới và dùng lệnh <b>/nhapkey</b> trong Discord để dùng Bot trong 5 tiếng!</p>
+        <div class="key-box" id="keyText">{{ key }}</div>
+        <button class="btn" onclick="copyKey()">Sao Chép Key</button>
+    </div>
+    <script>
+        function copyKey() {
+            var keyText = document.getElementById("keyText").innerText;
+            navigator.clipboard.writeText(keyText);
+            alert("Đã sao chép Key: " + keyText);
+        }
+    </script>
+</body>
+</html>
+"""
 
-def run_http_server():
+def generate_random_key():
+    random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    return f"@nghuydiy-{random_str}"
+
+@app.route('/')
+def home():
+    return "Bot Discord & Web Key đang hoạt động 24/7!"
+
+@app.route('/getkey-site')
+def get_key_site():
+    new_key = generate_random_key()
+    KEYS_DATABASE[new_key] = {"used": False, "created_at": time.time()}
+    return render_template_string(HTML_TEMPLATE, key=new_key)
+
+def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
-    print(f"Đã mở Web Server giả lập thành công trên port {port}")
-    server.serve_forever()
+    app.run(host='0.0.0.0', port=port)
 
-threading.Thread(target=run_http_server, daemon=True).start()
+threading.Thread(target=run_flask, daemon=True).start()
 
 # ==================== 2. KHỞI TẠO DISCORD BOT ====================
 
@@ -73,17 +123,20 @@ def fetch_services_cache():
         SERVICES_CACHE = res
 
 def is_authorized(user_id: int) -> bool:
-    if not ADMIN_IDS and OWNER_ID == 0:
+    if user_id == OWNER_ID or user_id in ADMIN_IDS:
         return True
-    return user_id == OWNER_ID or user_id in ADMIN_IDS
+    
+    if user_id in USER_EXPIRATION:
+        if time.time() < USER_EXPIRATION[user_id]:
+            return True
+        else:
+            del USER_EXPIRATION[user_id]
+    return False
 
 def is_owner(user_id: int) -> bool:
-    if OWNER_ID == 0:
-        return True
     return user_id == OWNER_ID
 
 def format_money(amount: float) -> str:
-    """Định dạng tiền tệ VNĐ dạng 100.000đ"""
     return f"{int(round(amount)):,}".replace(",", ".") + "đ"
 
 @bot.event
@@ -91,152 +144,171 @@ async def on_ready():
     print(f'Bot đã kết nối thành công: {bot.user}')
     fetch_services_cache()
 
-# ==================== 3. LỆNH CÔNG KHAI ====================
+# ==================== 3. HỆ THỐNG GETKEY & NHẬP KEY ====================
 
-@bot.tree.command(name="id", description="Xem Discord User ID của bạn")
-async def get_my_id(interaction: discord.Interaction):
+@bot.tree.command(name="getkey", description="Lấy link vượt key để sử dụng Bot 5 tiếng")
+async def get_key_command(interaction: discord.Interaction):
+    msg = (
+        f"🔗 **LINK LẤY KEY SỬ DỤNG BOT (5 TIẾNG):**\n"
+        f"👉 Link vượt key: {LINK_RUT_GON}\n\n"
+        f"📌 *Hướng dẫn:* Vượt qua link trên để nhận Key, sau đó dùng lệnh `/nhapkey <Mã-Key>` để kích hoạt.\n"
+        f"-----------------------------------------\n"
+        f"💬 **Bạn Không Muốn Vượt Link ? Mua Key Với Giá 5.000Đ**\n"
+        f"📩 Liên hệ ngay Chủ Bot (<@{OWNER_ID}>) để mua Key VIP dùng không cần vượt link!"
+    )
+    await interaction.response.send_message(msg, ephemeral=False)
+
+@bot.tree.command(name="nhapkey", description="Kích hoạt Key để dùng Bot trong 5 tiếng")
+@app_commands.describe(key="Nhập mã Key bạn đã lấy được")
+async def redeem_key(interaction: discord.Interaction, key: str):
+    key = key.strip()
+    if key not in KEYS_DATABASE:
+        await interaction.response.send_message("❌ **Key không hợp lệ** hoặc không tồn tại trên hệ thống!", ephemeral=False)
+        return
+
+    key_info = KEYS_DATABASE[key]
+    if key_info["used"]:
+        await interaction.response.send_message("⚠️ **Key này đã được sử dụng rồi!** Mỗi key chỉ kích hoạt được 1 lần.", ephemeral=False)
+        return
+
+    KEYS_DATABASE[key]["used"] = True
+    expire_time = time.time() + (5 * 3600)
+    USER_EXPIRATION[interaction.user.id] = expire_time
+
+    time_str = datetime.fromtimestamp(expire_time).strftime('%H:%M:%S %d/%m/%Y')
     await interaction.response.send_message(
-        f"🆔 **ID Discord của bạn là:** `{interaction.user.id}`", 
+        f"🎉 **KÍCH HOẠT KEY THÀNH CÔNG!**\n"
+        f"👤 Người dùng: <@{interaction.user.id}>\n"
+        f"🔑 Key: `{key}`\n"
+        f"⏰ Hạn sử dụng Bot: **5 Tiếng** (Đến: `{time_str}`)",
         ephemeral=False
     )
 
-@bot.tree.command(name="checkquyen", description="Kiểm tra bản thân có quyền dùng Bot hay không")
-async def check_my_permission(interaction: discord.Interaction):
-    if is_owner(interaction.user.id):
-        await interaction.response.send_message(
-            f"👑 **{interaction.user.name}**, bạn là **CHỦ BOT (OWNER)**!", 
-            ephemeral=False
-        )
-    elif is_authorized(interaction.user.id):
-        await interaction.response.send_message(
-            f"✅ **{interaction.user.name}**, bạn **ĐƯỢC PHÉP** sử dụng Bot!", 
-            ephemeral=False
-        )
-    else:
-        await interaction.response.send_message(
-            f"❌ **{interaction.user.name}**, bạn **KHÔNG CÓ QUYỀN** sử dụng Bot!", 
-            ephemeral=False
-        )
+@bot.tree.command(name="taokey", description="[Chủ bot] Tạo key ngẫu nhiên dạng @nghuydiy-XXXXXXXX")
+async def create_key(interaction: discord.Interaction):
+    if not is_owner(interaction.user.id):
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot** mới có quyền dùng lệnh này!", ephemeral=False)
+        return
 
-@bot.tree.command(name="list", description="Hiển thị danh sách tất cả các lệnh của Bot")
+    new_key = generate_random_key()
+    KEYS_DATABASE[new_key] = {"used": False, "created_at": time.time()}
+    await interaction.response.send_message(f"👑 **Đã tạo Key mới thành công:**\n`{new_key}`", ephemeral=False)
+
+@bot.tree.command(name="taokeycustom", description="[Chủ bot] Tạo key tùy chỉnh theo ý muốn")
+@app_commands.describe(key_custom="Nhập mã key tùy chỉnh bạn muốn tạo")
+async def create_custom_key(interaction: discord.Interaction, key_custom: str):
+    if not is_owner(interaction.user.id):
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot** mới có quyền dùng lệnh này!", ephemeral=False)
+        return
+
+    key_custom = key_custom.strip()
+    if key_custom in KEYS_DATABASE:
+        await interaction.response.send_message("⚠️ Key này đã tồn tại trên hệ thống!", ephemeral=False)
+        return
+
+    KEYS_DATABASE[key_custom] = {"used": False, "created_at": time.time()}
+    await interaction.response.send_message(f"👑 **Đã tạo Key tùy chỉnh thành công:**\n`{key_custom}`", ephemeral=False)
+
+# ==================== 4. LỆNH CÔNG KHAI & QUẢN LÝ ====================
+
+@bot.tree.command(name="id", description="Xem Discord User ID của bạn")
+async def get_my_id(interaction: discord.Interaction):
+    await interaction.response.send_message(f"🆔 **ID Discord của bạn là:** `{interaction.user.id}`", ephemeral=False)
+
+@bot.tree.command(name="checkquyen", description="Kiểm tra thời gian dùng Bot còn lại")
+async def check_my_permission(interaction: discord.Interaction):
+    uid = interaction.user.id
+    if is_owner(uid):
+        await interaction.response.send_message(f"👑 **{interaction.user.name}**, bạn là **CHỦ BOT (Vĩnh viễn)**!", ephemeral=False)
+    elif uid in ADMIN_IDS:
+        await interaction.response.send_message(f"✅ **{interaction.user.name}**, bạn là **ADMIN (Vĩnh viễn)**!", ephemeral=False)
+    elif uid in USER_EXPIRATION and time.time() < USER_EXPIRATION[uid]:
+        remaining = int((USER_EXPIRATION[uid] - time.time()) / 60)
+        await interaction.response.send_message(f"⏳ **{interaction.user.name}**, bạn có quyền sử dụng Bot! (Còn lại: **{remaining} phút**)", ephemeral=False)
+    else:
+        await interaction.response.send_message(f"❌ **{interaction.user.name}**, bạn **CHƯA KÍCH HOẠT KEY** hoặc Key đã hết hạn. Hãy dùng `/getkey` để lấy key!", ephemeral=False)
+
+@bot.tree.command(name="list", description="Hiển thị danh sách tất cả các lệnh")
 async def list_commands(interaction: discord.Interaction):
     help_text = (
         "📜 **DANH SÁCH LỆNH CỦA BOT**\n\n"
+        "🔑 **Hệ thống Key:**\n"
+        "• `/getkey` : Lấy link vượt key sử dụng bot 5 tiếng\n"
+        "• `/nhapkey` : Kích hoạt Key nhận được\n"
+        "• `/checkquyen` : Kiểm tra thời hạn dùng bot còn lại\n\n"
         "🟢 **Lệnh công khai:**\n"
         "• `/id` : Xem Discord User ID của bạn\n"
-        "• `/checkquyen` : Kiểm tra bản thân có quyền dùng bot không\n"
-        "• `/list` : Xem danh sách tất cả các lệnh\n\n"
+        "• `/list` : Xem danh sách lệnh\n\n"
         "👑 **Lệnh Chủ Bot (Owner Only):**\n"
-        "• `/danhsachquyen` : Xem chi tiết danh sách người dùng được cấp quyền\n"
-        "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
-        "• `/goquyen` : Gỡ quyền dùng bot của User ID\n\n"
-        "💰 **Lệnh Dịch vụ:**\n"
-        "• `/check` : Menu chọn dịch vụ Facebook / TikTok đa cấp độ\n"
-        "• `/sodu` : Kiểm tra số dư tài khoản web\n"
+        "• `/taokey` : Tạo Key ngẫu nhiên\n"
+        "• `/taokeycustom` : Tạo Key tùy chỉnh\n"
+        "• `/danhsachquyen` | `/themquyen` | `/goquyen`\n\n"
+        "💰 **Lệnh Dịch vụ & Đặt đơn:**\n"
+        "• `/check` : Menu chọn dịch vụ SMM\n"
+        "• `/sodu` : Kiểm tra số dư web\n"
         "• `/don` : Tra cứu trạng thái đơn hàng\n"
-        "• `/dat` : Đặt đơn tùy chỉnh (`id_dich_vu`, `link`, `so_luong`)\n\n"
-        "⚡ **Lệnh đặt nhanh (Tối thiểu 50):**\n"
-        "• `/fblike` : Tăng Like Facebook (#7376)\n"
-        "• `/fbfollow` : Tăng Follow Facebook (#7132)\n"
-        "• `/ttlike` : Tăng Like TikTok (#7236)\n"
-        "• `/ttview` : Tăng View TikTok (#7240 - Tối thiểu 1000)"
+        "• `/dat` | `/fblike` | `/fbfollow` | `/ttlike` | `/ttview`"
     )
     await interaction.response.send_message(help_text, ephemeral=False)
 
-# ==================== 4. LỆNH QUẢN LÝ QUYỀN ====================
+# ==================== 5. QUẢN LÝ QUYỀN ADMIN ====================
 
-@bot.tree.command(name="danhsachquyen", description="Xem danh sách chi tiết người dùng được phép sử dụng Bot")
+@bot.tree.command(name="danhsachquyen", description="Xem danh sách Admin/Owner")
 async def list_authorized_users(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
         await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
         return
-
     await interaction.response.defer(ephemeral=False)
-    msg = "📋 **DANH SÁCH NGƯỜI DÙNG ĐƯỢC PHÉP SỬ DỤNG BOT**\n\n"
-    
-    if OWNER_ID != 0:
-        try:
-            owner_user = await bot.fetch_user(OWNER_ID)
-            msg += f"👑 **Chủ Bot (Owner):**\n• Tên: **{owner_user.name}** (`{owner_user}`)\n• ID: `{OWNER_ID}`\n\n"
-        except Exception:
-            msg += f"👑 **Chủ Bot (Owner):** ID `{OWNER_ID}`\n\n"
-    
-    if not ADMIN_IDS:
-        msg += "🔓 **Chế độ:** Chưa có Admin nào được thêm."
-    else:
-        msg += "👥 **Danh sách Admin/Người dùng được cấp quyền:**\n"
-        for idx, uid in enumerate(ADMIN_IDS, start=1):
-            try:
-                user = await bot.fetch_user(uid)
-                msg += f"{idx}. **{user.global_name or user.name}** (@{user.name})\n   └── 🆔 ID: `{uid}`\n"
-            except Exception:
-                msg += f"{idx}. User ID: `{uid}` (Không thể lấy thông tin chi tiết)\n"
-
+    msg = f"📋 **DANH SÁCH CHỦ BOT & ADMIN CỐ ĐỊNH**\n👑 Owner ID: `{OWNER_ID}`\n👥 Admin IDs: `{ADMIN_IDS}`"
     await interaction.followup.send(msg)
 
-@bot.tree.command(name="themquyen", description="[Chủ bot] Thêm quyền dùng Bot cho một Discord User ID")
-@app_commands.describe(user_id="Nhập Discord User ID cần cấp quyền")
+@bot.tree.command(name="themquyen", description="[Chủ bot] Cấp quyền Admin cố định")
 async def add_permission(interaction: discord.Interaction, user_id: str):
     if not is_owner(interaction.user.id):
-        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền thêm người dùng!", ephemeral=False)
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot** mới có quyền!", ephemeral=False)
         return
-
     try:
         uid = int(user_id)
-        if uid in ADMIN_IDS:
-            await interaction.response.send_message(f"⚠️ User ID `{uid}` đã có trong danh sách từ trước!", ephemeral=False)
-        else:
+        if uid not in ADMIN_IDS:
             ADMIN_IDS.append(uid)
-            try:
-                user = await bot.fetch_user(uid)
-                info = f"**{user.name}** (`{uid}`)"
-            except Exception:
-                info = f"`{uid}`"
-            await interaction.response.send_message(f"✅ Đã cấp quyền sử dụng Bot thành công cho: {info}", ephemeral=False)
+            await interaction.response.send_message(f"✅ Đã cấp quyền Admin cho ID `{uid}`", ephemeral=False)
+        else:
+            await interaction.response.send_message("⚠️ ID này đã là Admin từ trước!", ephemeral=False)
     except ValueError:
-        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=False)
+        await interaction.response.send_message("❌ ID không hợp lệ!", ephemeral=False)
 
-@bot.tree.command(name="goquyen", description="[Chủ bot] Gỡ quyền dùng Bot của một Discord User ID")
-@app_commands.describe(user_id="Nhập Discord User ID cần gỡ quyền")
+@bot.tree.command(name="goquyen", description="[Chủ bot] Gỡ quyền Admin")
 async def remove_permission(interaction: discord.Interaction, user_id: str):
     if not is_owner(interaction.user.id):
-        await interaction.response.send_message("❌ Chỉ **Chủ Bot (Owner)** mới có quyền gỡ người dùng!", ephemeral=False)
+        await interaction.response.send_message("❌ Chỉ **Chủ Bot** mới có quyền!", ephemeral=False)
         return
-
     try:
         uid = int(user_id)
         if uid in ADMIN_IDS:
             ADMIN_IDS.remove(uid)
-            await interaction.response.send_message(f"🗑️ Đã gỡ quyền sử dụng Bot của User ID: `{uid}`", ephemeral=False)
+            await interaction.response.send_message(f"🗑️ Đã gỡ quyền Admin của ID `{uid}`", ephemeral=False)
         else:
-            await interaction.response.send_message(f"⚠️ User ID `{uid}` không có trong danh sách được cấp quyền!", ephemeral=False)
+            await interaction.response.send_message("⚠️ ID này không nằm trong danh sách Admin!", ephemeral=False)
     except ValueError:
-        await interaction.response.send_message("❌ User ID phải là chuỗi các chữ số!", ephemeral=False)
+        await interaction.response.send_message("❌ ID không hợp lệ!", ephemeral=False)
 
-# ==================== 5. BỘ GIAO DIỆN DROPDOWN CHO LỆNH /CHECK ====================
+# ==================== 6. MENU DROPDOWN TRA CÚU DỊCH VỤ ====================
 
 class CategorySelect(discord.ui.Select):
     def __init__(self, categories, raw_services):
-        options = [
-            discord.SelectOption(label=cat[:100], description=f"Xem các dịch vụ của {cat}"[:100])
-            for cat in categories[:25]
-        ]
-        super().__init__(placeholder="📂 Chọn danh mục muốn xem dịch vụ...", options=options)
+        options = [discord.SelectOption(label=cat[:100], description=f"Xem {cat}"[:100]) for cat in categories[:25]]
+        super().__init__(placeholder="📂 Chọn danh mục muốn xem...", options=options)
         self.raw_services = raw_services
 
     async def callback(self, interaction: discord.Interaction):
         selected_cat = self.values[0]
         matching_services = [s for s in self.raw_services if s.get('category') == selected_cat]
-        
         msg = f"📌 **DANH SÁCH DỊCH VỤ THUỘC:** `{selected_cat.upper()}`\n\n"
         for s in matching_services:
             s_id = s.get('service', 'N/A')
             s_name = s.get('name', 'N/A')
             rate_val = float(s.get('rate', 0))
-            formatted_rate = format_money(rate_val)
-            min_q = s.get('min', '1')
-            max_q = s.get('max', '1000000')
-            msg += f"🔹 **ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{formatted_rate} / 1k` | Min: `{min_q}` - Max: `{max_q}`\n"
+            msg += f"🔹 **ID:** `{s_id}` | **{s_name}**\n   └── 💰 Giá: `{format_money(rate_val)} / 1k` | Min: `{s.get('min', '1')}` - Max: `{s.get('max', '1000000')}`\n"
             
         if len(msg) > 2000:
             chunks = [msg[i:i+1900] for i in range(0, len(msg), 1900)]
@@ -254,39 +326,47 @@ class CategorySelectView(discord.ui.View):
 class PlatformSelect(discord.ui.Select):
     def __init__(self, all_services):
         options = [
-            discord.SelectOption(label="Facebook", description="Xem các danh mục & dịch vụ Facebook", emoji="🔵"),
-            discord.SelectOption(label="TikTok", description="Xem các danh mục & dịch vụ TikTok", emoji="🎵")
+            discord.SelectOption(label="Facebook", description="Xem dịch vụ Facebook", emoji="🔵"),
+            discord.SelectOption(label="TikTok", description="Xem dịch vụ TikTok", emoji="🎵"),
+            discord.SelectOption(label="Tất cả danh mục", description="Xem toàn bộ danh mục", emoji="🌐")
         ]
-        super().__init__(placeholder="🌐 Chọn nền tảng bạn muốn kiểm tra...", options=options)
+        super().__init__(placeholder="🌐 Chọn nền tảng muốn kiểm tra...", options=options)
         self.all_services = all_services
 
     async def callback(self, interaction: discord.Interaction):
-        platform = self.values[0].lower()
+        selected_platform = self.values[0].lower()
         categories = []
+        keywords = {
+            'facebook': ['facebook', 'fb', 'fanpage', 'profile', 'group', 'reels', 'baiviet', 'bài viết'],
+            'tiktok': ['tiktok', 'tt', 'douyin']
+        }
+
         for s in self.all_services:
             cat = s.get('category', '')
+            if not cat: continue
             cat_lower = cat.lower()
-            if platform in cat_lower or (platform == 'facebook' and 'fb' in cat_lower) or (platform == 'tiktok' and 'tt' in cat_lower):
-                if cat not in categories:
-                    categories.append(cat)
+            name_lower = str(s.get('name', '')).lower()
+
+            if selected_platform == 'tất cả danh mục':
+                if cat not in categories: categories.append(cat)
+            else:
+                target_keywords = keywords.get(selected_platform, [selected_platform])
+                if any(kw in cat_lower or kw in name_lower for kw in target_keywords):
+                    if cat not in categories: categories.append(cat)
                     
         if not categories:
             await interaction.response.send_message(f"❌ Không tìm thấy danh mục nào cho **{self.values[0]}**.", ephemeral=False)
             return
 
         view = CategorySelectView(categories, self.all_services)
-        await interaction.response.send_message(
-            f"✅ Đã chọn nền tảng **{self.values[0]}**!\nVui lòng chọn **Danh mục** bên dưới để xem chi tiết mã dịch vụ:", 
-            view=view, 
-            ephemeral=False
-        )
+        await interaction.response.send_message(f"✅ Đã tìm thấy **{len(categories)}** danh mục cho **{self.values[0]}**!", view=view, ephemeral=False)
 
 class PlatformSelectView(discord.ui.View):
     def __init__(self, all_services):
         super().__init__(timeout=120)
         self.add_item(PlatformSelect(all_services))
 
-# ==================== 6. VIEW XÁC NHẬN ĐẶT ĐƠN ====================
+# ==================== 7. XÁC NHẬN VÀ XỬ LÝ ĐẶT ĐƠN ====================
 
 class ConfirmOrderView(discord.ui.View):
     def __init__(self, user_id, service_id, link, quantity, total_price):
@@ -302,16 +382,8 @@ class ConfirmOrderView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=False)
             return
-
         await interaction.response.defer()
-        payload = {
-            'action': 'add',
-            'service': str(self.service_id),
-            'link': self.link,
-            'quantity': self.quantity
-        }
-        result = smm_api_request(payload)
-        
+        result = smm_api_request({'action': 'add', 'service': str(self.service_id), 'link': self.link, 'quantity': self.quantity})
         if 'order' in result:
             await interaction.followup.send(
                 f"✅ **ĐẶT ĐƠN THÀNH CÔNG!**\n"
@@ -323,7 +395,6 @@ class ConfirmOrderView(discord.ui.View):
             )
         else:
             await interaction.followup.send(f"❌ **Lỗi tạo đơn:** {result.get('error', 'Lỗi không xác định.')}")
-        
         self.stop()
 
     @discord.ui.button(label="🔴 Hủy bỏ", style=discord.ButtonStyle.red)
@@ -331,97 +402,70 @@ class ConfirmOrderView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Bạn không phải người tạo yêu cầu này!", ephemeral=False)
             return
-
         await interaction.response.send_message("❌ Đã hủy bỏ đơn hàng.", ephemeral=False)
         self.stop()
 
 async def process_order_with_confirmation(interaction: discord.Interaction, service_id: str, link: str, quantity: int):
-    if not SERVICES_CACHE:
-        fetch_services_cache()
-
+    if not SERVICES_CACHE: fetch_services_cache()
     service_info = next((s for s in SERVICES_CACHE if str(s.get('service')) == str(service_id)), None)
-    
     rate_val = float(service_info.get('rate', 0)) if service_info else 0
     service_name = service_info.get('name', f'Dịch vụ ID #{service_id}') if service_info else f'Dịch vụ ID #{service_id}'
-    
     total_price = (rate_val / 1000.0) * quantity
 
     confirm_msg = (
-        f"⚠️ **BẠN CÓ CHẮC CHẮN MUỐN ĐẶT ĐƠN KHÔNG?**\n\n"
-        f"📌 **Thông tin đơn hàng:**\n"
+        f"⚠️ **XÁC NHẬN ĐẶT ĐƠN**\n\n"
         f"• **Người đặt:** <@{interaction.user.id}>\n"
         f"• **Dịch vụ:** {service_name} (`#{service_id}`)\n"
-        f"• **Link/Đường dẫn:** {link}\n"
+        f"• **Link:** {link}\n"
         f"• **Số lượng:** `{quantity:,}`\n"
-        f"• **Đơn giá:** `{format_money(rate_val)} / 1.000`\n"
-        f"👉 **TỔNG TIỀN THANH TOÁN:** **{format_money(total_price)}**\n\n"
-        f"Vui lòng nhấn **Xác nhận đặt** để hoàn tất!"
+        f"👉 **TỔNG TIỀN:** **{format_money(total_price)}**\n\n"
+        f"Vui lòng nhấn **Xác nhận đặt** bên dưới!"
     )
-
-    view = ConfirmOrderView(
-        user_id=interaction.user.id,
-        service_id=service_id,
-        link=link,
-        quantity=quantity,
-        total_price=total_price
-    )
-    
+    view = ConfirmOrderView(interaction.user.id, service_id, link, quantity, total_price)
     await interaction.followup.send(confirm_msg, view=view)
 
-# ==================== 7. LỆNH DỊCH VỤ & ĐẶT ĐƠN ====================
+# ==================== 8. LỆNH ĐẶT ĐƠN ====================
 
 @bot.tree.command(name="check", description="Menu tra cứu dịch vụ Facebook & TikTok")
 async def check_services(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-
     await interaction.response.defer(ephemeral=False)
     fetch_services_cache()
-
     if isinstance(SERVICES_CACHE, list) and len(SERVICES_CACHE) > 0:
-        view = PlatformSelectView(SERVICES_CACHE)
-        await interaction.followup.send("🔍 **MENU TRA CÚU DỊCH VỤ SMM**\nVui lòng chọn nền tảng bạn cần kiểm tra:", view=view)
+        await interaction.followup.send("🔍 **MENU TRA CÚU DỊCH VỤ SMM**", view=PlatformSelectView(SERVICES_CACHE))
     else:
         await interaction.followup.send("❌ Không thể tra cứu danh sách dịch vụ lúc này.")
 
 @bot.tree.command(name="sodu", description="Kiểm tra số dư tài khoản web")
 async def check_balance(interaction: discord.Interaction):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-
     await interaction.response.defer()
     result = smm_api_request({'action': 'balance'})
-    
     if 'balance' in result:
-        raw_balance = float(result['balance'])
-        formatted_balance = format_money(raw_balance)
-        await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{formatted_balance}**")
+        await interaction.followup.send(f"💰 Số dư tài khoản hiện tại: **{format_money(float(result['balance']))}**")
     else:
         await interaction.followup.send("❌ Không thể tra cứu số dư.")
 
-@bot.tree.command(name="dat", description="Đặt đơn cho bất kỳ dịch vụ phụ nào")
-@app_commands.describe(id_dich_vu="Mã ID dịch vụ", link="Đường dẫn bài viết/kênh", so_luong="Số lượng cần tăng (tối thiểu 50)")
+@bot.tree.command(name="dat", description="Đặt đơn cho bất kỳ dịch vụ nào")
 async def place_order(interaction: discord.Interaction, id_dich_vu: str, link: str, so_luong: int):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-
     if so_luong < 50:
         await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
         return
-
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, id_dich_vu, link, so_luong)
 
 @bot.tree.command(name="don", description="Tra cứu trạng thái đơn hàng")
-@app_commands.describe(order_id="Mã đơn hàng cần kiểm tra")
 async def check_status(interaction: discord.Interaction, order_id: str):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-
     await interaction.response.defer()
     result = smm_api_request({'action': 'status', 'order': order_id})
     if 'status' in result:
@@ -429,53 +473,39 @@ async def check_status(interaction: discord.Interaction, order_id: str):
     else:
         await interaction.followup.send("❌ Không tìm thấy thông tin đơn hàng này.")
 
-# ==================== 8. LỆNH ĐẶT NHANH ====================
-
-@bot.tree.command(name="fblike", description="Tăng Like Facebook nhanh (#7376 - Tối thiểu 50)")
-@app_commands.describe(link="Đường dẫn bài viết Facebook", so_luong="Số lượng cần tăng (tối thiểu 50)")
+@bot.tree.command(name="fblike", description="Tăng Like Facebook nhanh (#7376)")
 async def fb_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-    if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
-        return
+    if so_luong < 50: return await interaction.response.send_message("⚠️ Số lượng tối thiểu là **50**!", ephemeral=False)
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7376", link, so_luong)
 
-@bot.tree.command(name="fbfollow", description="Tăng Follow Facebook nhanh (#7132 - Tối thiểu 50)")
-@app_commands.describe(link="Đường dẫn trang/trang cá nhân FB", so_luong="Số lượng cần tăng (tối thiểu 50)")
+@bot.tree.command(name="fbfollow", description="Tăng Follow Facebook nhanh (#7132)")
 async def fb_follow(interaction: discord.Interaction, link: str, so_luong: int = 50):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-    if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
-        return
+    if so_luong < 50: return await interaction.response.send_message("⚠️ Số lượng tối thiểu là **50**!", ephemeral=False)
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7132", link, so_luong)
 
-@bot.tree.command(name="ttlike", description="Tăng Like TikTok nhanh (#7236 - Tối thiểu 50)")
-@app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 50)")
+@bot.tree.command(name="ttlike", description="Tăng Like TikTok nhanh (#7236)")
 async def tt_like(interaction: discord.Interaction, link: str, so_luong: int = 50):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-    if so_luong < 50:
-        await interaction.response.send_message("⚠️ Số lượng đặt tối thiểu là **50**!", ephemeral=False)
-        return
+    if so_luong < 50: return await interaction.response.send_message("⚠️ Số lượng tối thiểu là **50**!", ephemeral=False)
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7236", link, so_luong)
 
-@bot.tree.command(name="ttview", description="Tăng View TikTok nhanh (#7240 - Tối thiểu 1000)")
-@app_commands.describe(link="Đường dẫn video TikTok", so_luong="Số lượng cần tăng (tối thiểu 1000)")
+@bot.tree.command(name="ttview", description="Tăng View TikTok nhanh (#7240)")
 async def tt_view(interaction: discord.Interaction, link: str, so_luong: int = 1000):
     if not is_authorized(interaction.user.id):
-        await interaction.response.send_message("❌ Bạn không có quyền sử dụng lệnh này!", ephemeral=False)
+        await interaction.response.send_message("❌ Bạn cần nhập key để dùng bot! Dùng `/getkey` để lấy key.", ephemeral=False)
         return
-    if so_luong < 1000:
-        await interaction.response.send_message("⚠️ Số lượng view TikTok đặt tối thiểu là **1000**!", ephemeral=False)
-        return
+    if so_luong < 1000: return await interaction.response.send_message("⚠️ Số lượng tối thiểu là **1000**!", ephemeral=False)
     await interaction.response.defer()
     await process_order_with_confirmation(interaction, "7240", link, so_luong)
 
