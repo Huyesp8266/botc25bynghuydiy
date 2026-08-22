@@ -5,7 +5,7 @@ import time
 import json
 from datetime import datetime
 import threading
-from flask import Flask, render_template_string, session
+from flask import Flask
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -59,7 +59,6 @@ def save_messages():
 
 # ==================== 1. FLASK WEB SERVER ====================
 app = Flask(__name__)
-app.secret_key = 'secret_key_nghuydiy_1530913781515812925'
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -142,8 +141,7 @@ async def list_commands(interaction: discord.Interaction):
         "👑 **Lệnh Chủ Bot (Owner Only):**\n"
         "• `/danhsachquyen` : Xem chi tiết danh sách người dùng được cấp quyền\n"
         "• `/themquyen` : Cấp quyền dùng bot cho User ID\n"
-        "• `/goquyen` : Gỡ quyền dùng bot của User ID\n"
-        "• `/suatinnhan` : Chỉnh sửa tin nhắn hệ thống\n\n"
+        "• `/goquyen` : Gỡ quyền dùng bot của User ID\n\n"
         "💰 **Lệnh Dịch vụ:**\n"
         "• `/check` : Menu chọn TOÀN BỘ dịch vụ trên Web theo danh mục\n"
         "• `/sodu` : Kiểm tra số dư tài khoản web\n"
@@ -180,7 +178,8 @@ class KeyOptionView(discord.ui.View):
 
 @bot.tree.command(name="getkey", description="Lấy link vượt key sử dụng Bot")
 async def get_key_command(interaction: discord.Interaction):
-    await interaction.response.send_message(MSGS.get("msg_getkey_menu", "🔑 CHỌN GÓI:"), view=KeyOptionView())
+    await interaction.response.defer()
+    await interaction.followup.send(MSGS.get("msg_getkey_menu", "🔑 CHỌN GÓI:"), view=KeyOptionView())
 
 @bot.tree.command(name="nhapkey", description="Nhập mã Key để kích hoạt quyền dùng Bot")
 @app_commands.describe(key="Mã Key của bạn")
@@ -192,11 +191,11 @@ async def redeem_key(interaction: discord.Interaction, key: str):
         return
 
     KEYS_DATABASE[key]["used"] = True
-    expire_time = time.time() + (KEYS_DATABASE[key].get("hours", 5.0) * 3600)
+    expire_time = time.time() + (KEYS_DATABASE[key].get("hours", 0.5) * 3600)
     USER_EXPIRATION[interaction.user.id] = expire_time
     
     time_str = datetime.fromtimestamp(expire_time).strftime('%H:%M:%S %d/%m/%Y')
-    msg = MSGS.get("msg_nhapkey_success", "").format(user_id=interaction.user.id, key=key, minutes=int(KEYS_DATABASE[key].get("hours", 5.0)*60), time_str=time_str)
+    msg = MSGS.get("msg_nhapkey_success", "").format(user_id=interaction.user.id, key=key, minutes=int(KEYS_DATABASE[key].get("hours", 0.5)*60), time_str=time_str)
     await interaction.followup.send(msg)
 
 # ==================== 👑 LỆNH CHỦ BOT (OWNER ONLY) ====================
@@ -263,7 +262,7 @@ class CategorySelect(discord.ui.Select):
         services = self.categorized_services.get(cat_name, [])
 
         msg = f"📂 **DANH MỤC: {cat_name.upper()}**\n\n"
-        for s in services[:15]: # Giới hạn hiển thị 15 dịch vụ tiêu biểu để không vượt quá giới hạn tin nhắn
+        for s in services[:15]:
             rate = f"{float(s.get('rate', 0)):,}đ"
             msg += f"• **ID: `{s.get('service')}`** — {s.get('name')} | Giá: `{rate}` | Min: `{s.get('min')}` - Max: `{s.get('max')}`\n"
 
@@ -284,11 +283,10 @@ async def check_menu(interaction: discord.Interaction):
     await interaction.response.defer()
     all_services = fetch_all_services()
 
-    if not all_services or isinstance(all_services, dict) and "error" in all_services:
+    if not all_services or (isinstance(all_services, dict) and "error" in all_services):
         await interaction.followup.send("❌ Không thể kết nối lấy danh sách dịch vụ từ Web!")
         return
 
-    # Tự động gom nhóm tất cả dịch vụ theo Category
     categorized = {}
     for s in all_services:
         cat = s.get('category', 'Dịch vụ khác')
