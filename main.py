@@ -4,7 +4,7 @@ import string
 import time
 from datetime import datetime, timedelta
 import threading
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, session
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -18,25 +18,20 @@ API_KEY = os.getenv('API_KEY')
 API_URL = "https://dichvu.c25tool.net/api/v2"
 
 # -------------------------------------------------------------
-# CẤU HÌNH CỤ THỂ DÀNH CHO BOT CỦA BẠN
+# CẤU HÌNH BOT
 # -------------------------------------------------------------
-LINK_RUT_GON = "https://link4m.net/go/gLanao"
-OWNER_ID = 1530913781515812925  # ID Chủ bot
-ADMIN_IDS = [1530913781515812925]  # Danh sách Admin cố định
+LINK_RUT_GON = "https://link4m.net/go/oWcrW"
+OWNER_ID = 1530913781515812925
+ADMIN_IDS = [1530913781515812925]
 
-# Domain Render tự động lấy từ môi trường Render
-RENDER_URL = os.getenv('RENDER_EXTERNAL_URL', 'https://your-app.onrender.com')
-
-# Lưu trữ dữ liệu Key & Hạn dùng trong RAM
 KEYS_DATABASE = {}
 USER_EXPIRATION = {}
-
-# Cache danh sách dịch vụ
 SERVICES_CACHE = []
 
-# ==================== 1. FLASK WEB SERVER (LẤY KEY & KEEP ALIVE) ====================
+# ==================== 1. FLASK WEB SERVER ====================
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'secret_key_nghuydiy_1530913781515812925')
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -83,8 +78,18 @@ def home():
 
 @app.route('/getkey-site')
 def get_key_site():
+    if 'current_key' in session:
+        user_key = session['current_key']
+        if KEYS_DATABASE.get(user_key, {}).get("used", False):
+            new_key = generate_random_key()
+            KEYS_DATABASE[new_key] = {"used": False, "created_at": time.time()}
+            session['current_key'] = new_key
+            return render_template_string(HTML_TEMPLATE, key=new_key)
+        return render_template_string(HTML_TEMPLATE, key=user_key)
+    
     new_key = generate_random_key()
     KEYS_DATABASE[new_key] = {"used": False, "created_at": time.time()}
+    session['current_key'] = new_key
     return render_template_string(HTML_TEMPLATE, key=new_key)
 
 def run_flask():
